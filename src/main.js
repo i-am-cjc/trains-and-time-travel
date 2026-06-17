@@ -3,6 +3,7 @@ import './styles.css';
 
 const TILE_SIZE = 32;
 const LOOP_MINUTES = 120;
+const POCKET_WATCH_BONUS_MINUTES = 30;
 const SIGHT_RADIUS = 100;
 const MAP_URL = '/maps/station-loop.txt';
 const RESET_EFFECT_MS = 900;
@@ -49,6 +50,7 @@ const app = new Application();
 const world = new Container();
 const hud = document.querySelector('#hud');
 const log = document.querySelector('#log');
+const inventoryList = document.querySelector('#inventory-list');
 const inspectButton = document.querySelector('#inspect-button');
 const inspectStatus = document.querySelector('#inspect-status');
 const loopEffect = document.querySelector('#loop-effect');
@@ -56,6 +58,24 @@ let inspectMode = false;
 let state;
 let loopCount = 0;
 let resetEffectTimeout;
+
+const itemDefinitions = {
+  pocketWatch: {
+    name: 'Pocket watch',
+    description: 'A brass watch wound against the loop. Use it to add 30 minutes to this loop.',
+    color: 0xf6c453,
+    effect: ({ item }) => {
+      state.minutesLeft += POCKET_WATCH_BONUS_MINUTES;
+      state.loopLimit += POCKET_WATCH_BONUS_MINUTES;
+      writeLog(`${item.name} clicks open. The loop stretches by ${POCKET_WATCH_BONUS_MINUTES} minutes.`);
+      draw();
+    },
+  },
+};
+
+const placedItems = [
+  { id: 'pocket-watch', type: 'pocketWatch', x: 23, y: 27 },
+];
 
 await app.init({ background: '#000000', resizeTo: document.querySelector('#game'), antialias: false });
 document.querySelector('#game').appendChild(app.canvas);
@@ -95,12 +115,16 @@ function resetLoop(message, { effect = true } = {}) {
   state = {
     player: { ...map.start },
     minutesLeft: LOOP_MINUTES,
+    loopLimit: LOOP_MINUTES,
+    inventory: [],
+    items: placedItems.map((item) => ({ ...item })),
     facing: [0, 1],
     seen: new Set(),
     npcs: map.npcs.map(createNpcState),
   };
   if (effect) playResetEffect();
   draw();
+  renderInventory();
   writeLog(message);
 }
 
@@ -132,7 +156,9 @@ function tryMove(dx, dy) {
     return;
   }
   state.player = target;
-  spendMinute(tile.train ? 'You step back onto the train and deliberately end the loop.' : null);
+  const item = itemAt(target.x, target.y);
+  const pickupMessage = item ? pickUpItem(item) : null;
+  spendMinute(pickupMessage ?? (tile.train ? 'You step back onto the train and deliberately end the loop.' : null));
   if (tile.train) resetLoop('The train pulls away, then arrives again. The loop begins from the platform.');
 }
 
@@ -291,13 +317,29 @@ function draw() {
       drawTile(x, y, visible.has(`${x},${y}`));
     }
   }
+  state.items.forEach((item) => {
+    if (visible.has(`${item.x},${item.y}`)) drawItem(item, true);
+  });
   state.npcs.forEach((npc) => {
     if (visible.has(`${npc.x},${npc.y}`)) drawSprite(npc.x, npc.y, 'N', true);
   });
   drawSprite(state.player.x, state.player.y, 'player', true);
   world.x = Math.round(app.screen.width / 2 - (state.player.x + 0.5) * TILE_SIZE);
   world.y = Math.round(app.screen.height / 2 - (state.player.y + 0.5) * TILE_SIZE);
-  hud.textContent = `Loop ${loopCount} · Minute ${elapsedMinutes()} / ${LOOP_MINUTES} · ${state.minutesLeft} min left`;
+  hud.textContent = `Loop ${loopCount} · Minute ${elapsedMinutes()} / ${state.loopLimit} · ${state.minutesLeft} min left`;
+}
+
+function drawItem(item, visible) {
+  const definition = itemDefinitions[item.type];
+  const g = new Graphics();
+  const px = item.x * TILE_SIZE;
+  const py = item.y * TILE_SIZE;
+  if (!visible) return;
+  g.circle(px + 16, py + 16, 7).fill(definition.color);
+  g.circle(px + 16, py + 16, 5).stroke({ color: 0x20242a, width: 2 });
+  g.moveTo(px + 16, py + 16).lineTo(px + 16, py + 11).lineTo(px + 19, py + 16).stroke({ color: 0x20242a, width: 1.5 });
+  g.rect(px + 13, py + 7, 6, 3).fill(0xd97706);
+  world.addChild(g);
 }
 
 function drawTile(x, y, isVisible) {
@@ -433,6 +475,8 @@ function describeTile(x, y) {
   const visible = visibleTiles();
   if (!state.seen.has(`${x},${y}`) && !visible.has(`${x},${y}`)) return writeLog('You know nothing about that square yet.');
   const npc = visible.has(`${x},${y}`) ? npcAt(x, y) : null;
+  const item = visible.has(`${x},${y}`) ? itemAt(x, y) : null;
+  if (item) return writeLog(itemDefinitions[item.type].description);
   writeLog(npc ? terrain.N.description : tileAt(x, y).description);
 }
 
@@ -449,6 +493,52 @@ function npcAt(x, y) {
   return state.npcs.find((npc) => npc.x === x && npc.y === y);
 }
 
+function itemAt(x, y) {
+  return state.items.find((item) => item.x === x && item.y === y);
+}
+
+function pickUpItem(item) {
+  const definition = itemDefinitions[item.type];
+  state.items = state.items.filter((candidate) => candidate.id !== item.id);
+  state.inventory.push({ id: item.id, type: item.type, name: definition.name, description: definition.description });
+  renderInventory();
+  return `You pick up ${definition.name}: ${definition.description}`;
+}
+
+function useInventoryItem(itemId) {
+  const item = state.inventory.find((candidate) => candidate.id === itemId);
+  if (!item) return;
+  state.inventory = state.inventory.filter((candidate) => candidate.id !== itemId);
+  renderInventory();
+  itemDefinitions[item.type].effect({ item });
+}
+
+function renderInventory() {
+  inventoryList.replaceChildren();
+  if (state.inventory.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'empty-inventory';
+    empty.textContent = 'Nothing yet. Walk over items to pick them up.';
+    inventoryList.appendChild(empty);
+    return;
+  }
+
+  state.inventory.forEach((item) => {
+    const button = document.createElement('button');
+    button.className = 'inventory-item';
+    button.type = 'button';
+    button.title = `${item.description} Click to use.`;
+    button.addEventListener('click', () => useInventoryItem(item.id));
+
+    const name = document.createElement('strong');
+    name.textContent = item.name;
+    const description = document.createElement('span');
+    description.textContent = item.description;
+    button.append(name, description);
+    inventoryList.appendChild(button);
+  });
+}
+
 function writeLog(message) {
   const entry = document.createElement('p');
   const timestamp = document.createElement('time');
@@ -460,7 +550,7 @@ function writeLog(message) {
 }
 
 function elapsedMinutes() {
-  return LOOP_MINUTES - state.minutesLeft;
+  return state.loopLimit - state.minutesLeft;
 }
 
 function playResetEffect() {
