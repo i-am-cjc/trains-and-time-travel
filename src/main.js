@@ -89,6 +89,7 @@ function resetLoop(message, { effect = true } = {}) {
     nextCarId: 0,
     carSpawnTimers: createCarSpawnTimers(),
     stationMasterScolding: false,
+    hasCrossedTrainDoor: false,
   };
   state.npcs = maps.station.npcs.map(createNpcState);
   seedRoadTraffic();
@@ -106,6 +107,7 @@ async function loadMap(url, mapKey) {
   const walkable = [];
   const adjacentByCellType = {};
   const trainTiles = [];
+  const trainDoorTiles = [];
   const npcs = [];
   const stairs = [];
   let start = { x: 1, y: 1 };
@@ -121,7 +123,8 @@ async function loadMap(url, mapKey) {
   grid.forEach((row, y) => row.forEach((cell, x) => {
     const tile = terrain[cell] ?? terrain[' '];
     if (!tile.blocks) walkable.push({ x, y });
-    if (tile.train) trainTiles.push({ x, y });
+    if (tile.trainWall) trainTiles.push({ x, y });
+    if (isTrainDoorCell(grid, x, y)) trainDoorTiles.push({ x, y });
     if (!adjacentByCellType[cell]) adjacentByCellType[cell] = [];
     adjacentByCellType[cell].push(...neighborsOf({ x, y }).filter((point) => {
       const neighbor = terrain[grid[point.y]?.[point.x]] ?? terrain[' '];
@@ -133,7 +136,7 @@ async function loadMap(url, mapKey) {
     adjacentByCellType[cellType] = uniquePoints(points);
   });
 
-  return { key: mapKey, grid, height: grid.length, width, start, stairs, npcs, walkable, adjacentByCellType, trainTiles };
+  return { key: mapKey, grid, height: grid.length, width, start, stairs, npcs, walkable, adjacentByCellType, trainTiles, trainDoorTiles };
 }
 
 function tryMove(dx, dy) {
@@ -147,14 +150,20 @@ function tryMove(dx, dy) {
     writeLog(tile.description);
     return;
   }
+  const enteringTrainDoor = isTrainDoor(target.x, target.y);
+  const shouldTriggerLoop = enteringTrainDoor && state.hasCrossedTrainDoor;
   state.player = target;
   closeReadableOverlay();
+  if (enteringTrainDoor && !state.hasCrossedTrainDoor) state.hasCrossedTrainDoor = true;
   if (tile.track) alertStationMasterToTrackTrespass();
   if (tile.stairs || tile.stairsUp || tile.stairsDown || tile.officeEntrance || tile.officeExit) useStairs(tile);
   const item = itemAt(target.x, target.y);
   const pickupMessage = item ? pickUpItem(item) : null;
-  spendMinute(pickupMessage ?? (tile.train ? 'You step back onto the train and deliberately end the loop.' : null));
-  if (tile.train) resetLoop('The train pulls away, then arrives again. The loop begins from the platform.');
+  const trainDoorMessage = enteringTrainDoor
+    ? (shouldTriggerLoop ? 'You step back through the train door and deliberately end the loop.' : 'You cross the train door onto the platform. Returning through it will end this loop.')
+    : null;
+  spendMinute(pickupMessage ?? trainDoorMessage);
+  if (shouldTriggerLoop) resetLoop('The train pulls away, then arrives again. The loop begins from the platform.');
 }
 
 function interact() {
@@ -282,6 +291,16 @@ function runScheduledEvents() {
 
 function setTileOverride(mapKey, x, y, tileType) {
   state.tileOverrides[mapKey] = { ...(state.tileOverrides[mapKey] ?? {}), [positionKey(x, y)]: tileType };
+}
+
+
+function isTrainDoor(x, y, mapKey = state.currentMapKey) {
+  return Boolean(maps?.[mapKey]?.trainDoorTiles.some((point) => point.x === x && point.y === y));
+}
+
+function isTrainDoorCell(grid, x, y) {
+  if (grid[y]?.[x] !== 'D') return false;
+  return neighborsOf({ x, y }).some((point) => grid[point.y]?.[point.x] === 'T');
 }
 
 function stationDoorTile() {
@@ -480,10 +499,10 @@ function createNpcState(npc, index) {
 }
 
 function createNpcRoute(npc, profile) {
-  const trainStops = maps[npc.mapKey].trainTiles;
+  const trainStops = maps[npc.mapKey].trainDoorTiles.length ? maps[npc.mapKey].trainDoorTiles : pointsAdjacentTo('T', npc.mapKey);
   const shopStops = pointsAdjacentTo('S', npc.mapKey);
   const kioskStops = pointsAdjacentTo('K', npc.mapKey);
-  const walkStops = walkableTiles(npc.mapKey).filter((point) => !tileAtFor(npc.mapKey, point.x, point.y).train);
+  const walkStops = walkableTiles(npc.mapKey).filter((point) => !isTrainDoor(point.x, point.y, npc.mapKey));
   const platformStops = walkableTiles(npc.mapKey).filter((point) => nearbyTrain(point, 4, npc.mapKey));
   const start = { x: npc.x, y: npc.y };
 
@@ -521,7 +540,7 @@ function npcBlockedRemark(npc) {
 function nearbyTrain(point, distance, mapKey = state.currentMapKey) {
   for (let y = point.y - distance; y <= point.y + distance; y += 1) {
     for (let x = point.x - distance; x <= point.x + distance; x += 1) {
-      if (tileAtFor(mapKey, x, y).train) return true;
+      if (tileAtFor(mapKey, x, y).trainWall || isTrainDoor(x, y, mapKey)) return true;
     }
   }
   return false;
@@ -665,7 +684,7 @@ function drawTile(x, y, isVisible) {
   const remembered = state.seen.has(`${x},${y}`);
   const rememberedOnly = remembered && !isVisible;
   if (!isVisible && !remembered) return drawSprite(x, y, 'unknown', true);
-  drawSprite(x, y, map.grid[y][x], true, rememberedOnly, rememberedOnly ? 0.67 : 1);
+  drawSprite(x, y, isTrainDoor(x, y) ? 'trainDoor' : map.grid[y][x], true, rememberedOnly, rememberedOnly ? 0.67 : 1);
   if (bloodStains.has(`${state.currentMapKey}:${positionKey(x, y)}`)) drawSprite(x, y, 'blood', true, rememberedOnly, rememberedOnly ? 0.67 : 1);
   if (isVisible && tileAt(x, y).readableText) drawReadableBadge(x, y);
 }
@@ -716,13 +735,24 @@ function drawSprite(x, y, sprite, visible, desaturated = false, alpha = 1) {
       g.rect(px + 2, py + 22, 28, 4).fill(tone(0x656b72));
       break;
     case 'T':
-      g.roundRect(px + inset, py + 4, TILE_SIZE - inset * 2, TILE_SIZE - 8, 4).fill(tone(0x335f8f));
-      g.rect(px + 8, py + 8, 16, 8).fill(tone(0x9bd7ff));
-      g.rect(px + 15, py + 18, 2, 10).fill(tone(0xf6c453));
+      g.roundRect(px + 1, py + 3, TILE_SIZE - 2, TILE_SIZE - 6, 4).fill(tone(0x1f4f78));
+      g.rect(px + 1, py + 4, TILE_SIZE - 2, 4).fill(tone(0xd6dde6));
+      g.rect(px + 1, py + 24, TILE_SIZE - 2, 3).fill(tone(0xf6c453));
+      g.rect(px + 7, py + 9, 18, 9).fill(tone(0x8bd3ff));
+      g.rect(px + 9, py + 11, 14, 5).fill(tone(0xdff6ff));
+      g.rect(px + 29, py + 5, 2, 22).fill(tone(0x102338));
       break;
     case 'D':
       g.rect(px + 6, py + 4, 20, 24).fill(tone(0x6f4724));
       g.circle(px + 21, py + 16, 2).fill(tone(0xf6c453));
+      break;
+    case 'trainDoor':
+      g.roundRect(px + 4, py + 2, 24, 28, 3).fill(tone(0x1f4f78));
+      g.rect(px + 7, py + 5, 18, 22).fill(tone(0xb8c1cc));
+      g.rect(px + 9, py + 7, 14, 7).fill(tone(0x8bd3ff));
+      g.rect(px + 15, py + 5, 2, 22).fill(tone(0x24496f));
+      g.circle(px + 12, py + 19, 2).fill(tone(0xf6c453));
+      g.circle(px + 20, py + 19, 2).fill(tone(0xf6c453));
       break;
     case 'W':
       g.rect(px + 4, py + 5, 24, 22).fill(tone(0x3d4c5d));
@@ -871,6 +901,7 @@ function baseColorFor(sprite) {
   if (sprite === 'unknown') return 0x000000;
   if (sprite === 'player') return 0x264757;
   if (sprite === 'blood') return 0x000000;
+  if (sprite === 'trainDoor') return 0x102338;
   if (sprite === 'carLeft' || sprite === 'carRight') return 0x1f2933;
   return terrain[sprite]?.color ?? 0x000000;
 }

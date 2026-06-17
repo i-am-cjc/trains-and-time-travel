@@ -4,7 +4,7 @@ export const terrain = {
   'h': { color: 0x1f2933, blocks: false, blocksView: false, road: true, description: 'A busy two-lane road. Traffic keeps left, and the cars do not stop for time travelers.' },
   '-': { color: 0x7f858c, blocks: false, blocksView: false, description: 'A raised platform edge running beside the track.' },
   '=': { color: 0x20242a, blocks: false, blocksView: false, track: true, description: 'The train tracks hum with dangerous loop-energy. The station master will not approve.' },
-  'T': { color: 0x335f8f, blocks: false, blocksView: true, train: true, description: 'The waiting train. Step back aboard to end this loop.' },
+  'T': { color: 0x24496f, blocks: true, blocksView: true, trainWall: true, description: 'The steel side of the waiting train blocks the way.' },
   'D': { color: 0x9b6a3c, blocks: false, blocksView: true, description: 'An open doorway blocks your line of sight, but you can pass through.' },
   'W': { color: 0x4f6f8c, blocks: true, blocksView: false, description: 'A glass window blocks the way, but you can see through it.' },
   '~': { color: 0x317345, blocks: false, description: 'A patch of grass.' },
