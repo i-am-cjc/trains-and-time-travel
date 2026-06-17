@@ -290,7 +290,9 @@ function draw() {
       drawTile(x, y, visible.has(`${x},${y}`));
     }
   }
-  state.npcs.forEach((npc) => drawSprite(npc.x, npc.y, 'N', visible.has(`${npc.x},${npc.y}`)));
+  state.npcs.forEach((npc) => {
+    if (visible.has(`${npc.x},${npc.y}`)) drawSprite(npc.x, npc.y, 'N', true);
+  });
   drawSprite(state.player.x, state.player.y, 'player', true);
   world.x = Math.round(app.screen.width / 2 - (state.player.x + 0.5) * TILE_SIZE);
   world.y = Math.round(app.screen.height / 2 - (state.player.y + 0.5) * TILE_SIZE);
@@ -300,7 +302,7 @@ function draw() {
 function drawTile(x, y, isVisible) {
   const remembered = state.seen.has(`${x},${y}`);
   if (!isVisible && !remembered) return drawSprite(x, y, 'unknown', true);
-  drawSprite(x, y, map.grid[y][x], isVisible, remembered && !isVisible);
+  drawSprite(x, y, map.grid[y][x], true, remembered && !isVisible);
 }
 
 function drawSprite(x, y, sprite, visible, desaturated = false) {
@@ -418,8 +420,9 @@ function lineClear(x0, y0, x1, y1) {
 }
 
 function describeTile(x, y) {
-  if (!state.seen.has(`${x},${y}`) && !visibleTiles().has(`${x},${y}`)) return writeLog('You know nothing about that square yet.');
-  const npc = npcAt(x, y);
+  const visible = visibleTiles();
+  if (!state.seen.has(`${x},${y}`) && !visible.has(`${x},${y}`)) return writeLog('You know nothing about that square yet.');
+  const npc = visible.has(`${x},${y}`) ? npcAt(x, y) : null;
   writeLog(npc ? terrain.N.description : tileAt(x, y).description);
 }
 
