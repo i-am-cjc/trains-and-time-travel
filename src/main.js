@@ -52,6 +52,10 @@ window.addEventListener('keydown', (event) => {
   }
   if (!directions[event.code]) return;
   event.preventDefault();
+  if (state.shootingMode) {
+    fireGun(...directions[event.code]);
+    return;
+  }
   tryMove(...directions[event.code]);
 });
 
@@ -91,6 +95,9 @@ function resetLoop(message, { effect = true } = {}) {
     stationMasterScolding: false,
     hasCrossedTrainDoor: false,
     gunfirePanic: false,
+    shootingMode: false,
+    bullet: null,
+    arrested: false,
   };
   state.npcs = maps.station.npcs.map(createNpcState);
   seedRoadTraffic();
@@ -115,8 +122,9 @@ async function loadMap(url, mapKey) {
   grid.forEach((row, y) => row.forEach((cell, x) => {
     if (cell === 'P') start = { x, y };
     if (cell === 'U' || cell === '^' || cell === 'v' || cell === 'E' || cell === 'Q') stairs.push({ x, y, type: cell });
-    if (cell === 'N' || cell === 'M') {
-      npcs.push({ x, y, mapKey, profileKey: cell === 'M' ? 'stationMaster' : npcProfileAssignments[positionKey(x, y)] });
+    if (cell === 'N' || cell === 'M' || cell === 'J') {
+      const profileKey = cell === 'M' ? 'stationMaster' : (cell === 'J' ? 'policeGuard' : npcProfileAssignments[positionKey(x, y)]);
+      npcs.push({ x, y, mapKey, profileKey });
       grid[y][x] = '.';
     }
   }));
@@ -275,7 +283,17 @@ function updateCarSpawns() {
 }
 
 function arrestPlayer() {
-  resetLoop('The police catch you before you can escape. You are arrested, and the loop snaps back to the station.');
+  state.currentMapKey = 'policeStation';
+  map = maps.policeStation;
+  state.player = { ...map.start };
+  state.arrested = true;
+  state.gunfirePanic = false;
+  state.shootingMode = false;
+  state.bullet = null;
+  state.npcs = state.npcs.filter((npc) => npc.mapKey !== 'policeStation').concat(map.npcs.map(createNpcState));
+  closeReadableOverlay();
+  draw();
+  writeLog('The police arrest you and lock you in a station cell. Time keeps moving, but you cannot leave before the loop ends.');
 }
 
 function killPlayer(message) {
@@ -337,6 +355,10 @@ function isPlayerInsideStationSideRoom() {
 }
 
 function useStairs(tile) {
+  if (state.arrested) {
+    writeLog('The cell door is locked. The loop clock keeps ticking without you.');
+    return;
+  }
   if (tile.officeEntrance) {
     movePlayerToMapStairs('officeReception', 'Q');
     writeLog('You step into the office block reception, where the workday loops in miniature.');
@@ -554,7 +576,7 @@ function createNpcRoute(npc, profile) {
     return [shopStop, kioskStop];
   }
 
-  if (profile.routePreference === 'police station patrol') {
+  if (profile.routePreference === 'police station patrol' || profile.routePreference === 'police station guard') {
     return [start, start];
   }
 
@@ -686,9 +708,13 @@ function draw() {
     if (visible.has(`${car.x},${car.y}`)) drawSprite(car.x, car.y, car.sprite, true);
   });
   state.npcs.filter((npc) => npc.mapKey === state.currentMapKey).forEach((npc) => {
-    if (visible.has(`${npc.x},${npc.y}`)) drawSprite(npc.x, npc.y, npc.profile.key === 'stationMaster' ? 'M' : (npc.profile.key === 'police' ? 'police' : 'N'), true);
+    if (visible.has(`${npc.x},${npc.y}`)) drawSprite(npc.x, npc.y, npc.profile.key === 'stationMaster' ? 'M' : (npc.profile.key === 'police' || npc.profile.key === 'policeGuard' ? 'police' : 'N'), true);
   });
-  drawSprite(state.player.x, state.player.y, 'player', true);
+  if (state.bullet?.path[state.bullet.index]) {
+    const bullet = state.bullet.path[state.bullet.index];
+    if (visible.has(`${bullet.x},${bullet.y}`)) drawSprite(bullet.x, bullet.y, 'bullet', true);
+  }
+  drawSprite(state.player.x, state.player.y, state.shootingMode ? 'playerGun' : 'player', true);
   world.x = Math.round(app.screen.width / 2 - (state.player.x + 0.5) * TILE_SIZE);
   world.y = Math.round(app.screen.height / 2 - (state.player.y + 0.5) * TILE_SIZE);
   hud.textContent = `Loop ${loopCount} · Minute ${elapsedMinutes()} / ${state.loopLimit} · ${state.minutesLeft} min left`;
@@ -835,6 +861,17 @@ function drawSprite(x, y, sprite, visible, desaturated = false, alpha = 1) {
       g.rect(px + 7, py + 9, 18, 5).fill(tone(0xc4b5fd));
       g.rect(px + 10, py + 17, 12, 2).fill(tone(0xf8fafc));
       break;
+    case 'j':
+      g.rect(px + 3, py + 3, 26, 26).fill(tone(0x1f2937));
+      for (let bar = 6; bar <= 24; bar += 6) g.rect(px + bar, py + 2, 3, 28).fill(tone(0x94a3b8));
+      g.rect(px + 3, py + 8, 26, 3).fill(tone(0x64748b));
+      g.rect(px + 3, py + 22, 26, 3).fill(tone(0x64748b));
+      break;
+    case 'c':
+      g.rect(px + 4, py + 3, 24, 26).fill(tone(0x111827));
+      for (let bar = 8; bar <= 23; bar += 5) g.rect(px + bar, py + 4, 3, 24).fill(tone(0xcbd5e1));
+      g.circle(px + 22, py + 16, 2).fill(tone(0xfacc15));
+      break;
     case 'o':
       g.rect(px + 5, py + 10, 22, 13).fill(tone(0x94a3b8));
       g.rect(px + 8, py + 13, 8, 6).fill(tone(0xe2e8f0));
@@ -903,13 +940,19 @@ function drawSprite(x, y, sprite, visible, desaturated = false, alpha = 1) {
       g.circle(px + 16, py + 16, 8).stroke({ color: tone(0x1f2937), width: 2 });
       g.moveTo(px + 16, py + 16).lineTo(px + 16, py + 10).lineTo(px + 20, py + 16).stroke({ color: tone(0x1f2937), width: 1.5 });
       break;
+    case 'bullet':
+      g.circle(px + 16, py + 16, 4).fill(tone(0xf8fafc));
+      g.circle(px + 16, py + 16, 2).fill(tone(0xfacc15));
+      break;
     case 'police':
     case 'N':
     case 'M':
     case 'player':
-      g.circle(px + 16, py + 9, 5).fill(tone(sprite === 'player' ? 0x61dafb : (sprite === 'M' ? 0xbfdbfe : 0xffc0a8)));
+    case 'playerGun':
+      g.circle(px + 16, py + 9, 5).fill(tone(sprite === 'player' || sprite === 'playerGun' ? 0x61dafb : (sprite === 'M' ? 0xbfdbfe : 0xffc0a8)));
       if (sprite === 'police') g.rect(px + 10, py + 3, 12, 4).fill(tone(0x111827));
-      g.roundRect(px + 10, py + 15, 12, 11, 3).fill(tone(sprite === 'player' ? 0x1d8fb8 : (sprite === 'M' || sprite === 'police' ? 0x2563eb : 0xff8a65)));
+      g.roundRect(px + 10, py + 15, 12, 11, 3).fill(tone(sprite === 'player' || sprite === 'playerGun' ? 0x1d8fb8 : (sprite === 'M' || sprite === 'police' ? 0x2563eb : 0xff8a65)));
+      if (sprite === 'playerGun') g.rect(px + 21, py + 17, 8, 3).fill(tone(0x111827));
       if (sprite === 'police') g.rect(px + 12, py + 17, 8, 2).fill(tone(0xf8fafc));
       g.rect(px + 8, py + 26, 6, 4).fill(tone(0x20242a));
       g.rect(px + 18, py + 26, 6, 4).fill(tone(0x20242a));
@@ -940,7 +983,8 @@ function drawReadableBadge(x, y) {
 
 function baseColorFor(sprite) {
   if (sprite === 'unknown') return 0x000000;
-  if (sprite === 'player') return 0x264757;
+  if (sprite === 'player' || sprite === 'playerGun') return 0x264757;
+  if (sprite === 'bullet') return 0x000000;
   if (sprite === 'blood') return 0x000000;
   if (sprite === 'trainDoor') return 0x102338;
   if (sprite === 'carLeft' || sprite === 'carRight') return 0x1f2933;
@@ -1040,47 +1084,61 @@ function useInventoryItem(itemId) {
 }
 
 
-function fireGun() {
-  const direction = prompt('Fire which direction? Type north, south, east, or west.');
-  const [dx, dy] = directionVectorFromInput(direction);
-  if (!dx && !dy) {
-    writeLog('You lower the gun without firing. Choose north, south, east, or west next time.');
-    return;
-  }
-
-  const hitNpc = firstNpcInLineOfFire(dx, dy);
-  if (!hitNpc) {
-    writeLog('The gunshot cracks through the station loop, but the bullet hits only stone and shadow.');
+function fireGun(dx, dy) {
+  if (dx === undefined || dy === undefined) {
+    state.shootingMode = true;
+    writeLog('You raise the gun. Press a direction key to fire.');
     draw();
     return;
   }
 
-  bloodStains.add(`${hitNpc.mapKey}:${positionKey(hitNpc.x, hitNpc.y)}`);
-  state.npcs = state.npcs.filter((npc) => npc !== hitNpc);
+  state.shootingMode = false;
   state.gunfirePanic = true;
-  writeLog(`The bullet hits ${hitNpc.profile.name}. The crowd panics and runs from you while the police give chase.`);
-  draw();
+  const shot = traceBullet(dx, dy);
+  state.bullet = { path: shot.path, index: 0 };
+  animateBullet(shot);
 }
 
-function directionVectorFromInput(input) {
-  const normalized = input?.trim().toLowerCase();
-  if (['north', 'n', 'up', 'w'].includes(normalized)) return [0, -1];
-  if (['south', 's', 'down'].includes(normalized)) return [0, 1];
-  if (['east', 'e', 'right', 'd'].includes(normalized)) return [1, 0];
-  if (['west', 'left', 'a'].includes(normalized)) return [-1, 0];
-  return [0, 0];
-}
-
-function firstNpcInLineOfFire(dx, dy) {
+function traceBullet(dx, dy) {
+  const path = [];
   let x = state.player.x + dx;
   let y = state.player.y + dy;
   while (!tileAtFor(state.currentMapKey, x, y).blocks) {
+    path.push({ x, y });
     const npc = npcAt(x, y);
-    if (npc) return npc;
+    if (npc) return { path, hitNpc: npc };
     x += dx;
     y += dy;
   }
-  return null;
+  return { path };
+}
+
+function animateBullet(shot) {
+  const step = () => {
+    if (!state.bullet) return;
+    if (state.bullet.index >= shot.path.length) {
+      finishBullet(shot);
+      return;
+    }
+    draw();
+    state.bullet.index += 1;
+    window.setTimeout(step, 35);
+  };
+  step();
+}
+
+function finishBullet(shot) {
+  state.bullet = null;
+  if (!shot.hitNpc) {
+    writeLog('The gunshot cracks through the loop. NPCs flee while police give chase, but the bullet hits only stone and shadow.');
+    draw();
+    return;
+  }
+
+  bloodStains.add(`${shot.hitNpc.mapKey}:${positionKey(shot.hitNpc.x, shot.hitNpc.y)}`);
+  state.npcs = state.npcs.filter((npc) => npc !== shot.hitNpc);
+  writeLog(`The bullet hits ${shot.hitNpc.profile.name}. A blood stain remains in every loop as the crowd panics and the police give chase.`);
+  draw();
 }
 
 function renderInventory() {
