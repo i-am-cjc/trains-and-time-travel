@@ -22,6 +22,61 @@ const npcBlockedRemarks = [
   'Make way, please.',
 ];
 
+const npcDefinitions = [
+  {
+    key: 'commuter',
+    name: 'Mara Vale',
+    description: 'A commuter in a raincoat keeps checking the platform clock.',
+    dialogue: [
+      'Mara Vale says, “If I miss this train again, I am blaming the clock.”',
+      'Mara Vale says, “The same two hours, the same platform, the same late meeting.”',
+      'Mara Vale says, “Please let me through. The train doors never wait for me.”',
+    ],
+    blockedRemarks: [
+      'Mara Vale says, “Sorry, that train is mine.”',
+      'Mara Vale taps her ticket. “Platform, please.”',
+    ],
+    routePreference: 'commuter to train',
+  },
+  {
+    key: 'shopkeeper',
+    name: 'Oren Pike',
+    description: 'A shopkeeper with ink-stained fingers counts coins on the way to the kiosk.',
+    dialogue: [
+      'Oren Pike says, “The kiosk clock loses a minute whenever nobody watches it.”',
+      'Oren Pike says, “I keep restocking yesterday’s papers.”',
+      'Oren Pike says, “If you see my delivery, send it toward the shop.”',
+    ],
+    blockedRemarks: [
+      'Oren Pike says, “Mind the papers, please.”',
+      'Oren Pike says, “I need to get back to the counter.”',
+    ],
+    routePreference: 'shopkeeper to kiosk',
+  },
+  {
+    key: 'tourist',
+    name: 'Elsie Rowan',
+    description: 'A lost tourist circles the platform with an upside-down timetable.',
+    dialogue: [
+      'Elsie Rowan says, “Does this platform go to tomorrow, or only back to noon?”',
+      'Elsie Rowan says, “I have asked for directions three times. The answers keep changing.”',
+      'Elsie Rowan says, “I recognize that bench. I think it recognizes me too.”',
+    ],
+    blockedRemarks: [
+      'Elsie Rowan says, “Oh! Is this the way to the platform?”',
+      'Elsie Rowan studies her map. “I thought I had just passed here.”',
+    ],
+    routePreference: 'lost tourist pacing near platform',
+  },
+];
+
+const npcProfileAssignments = {
+  // Optional map-coordinate overrides. Format: 'x,y': 'profileKey'.
+  '64,8': 'shopkeeper',
+  '34,15': 'commuter',
+  '14,22': 'tourist',
+};
+
 const terrain = {
   '#': { color: 0x38404d, blocks: true, description: 'A solid wall blocks the way.' },
   '.': { color: 0x656b72, blocks: false, description: 'Station paving.' },
@@ -138,7 +193,7 @@ async function loadMap(url) {
   grid.forEach((row, y) => row.forEach((cell, x) => {
     if (cell === 'P') start = { x, y };
     if (cell === 'N') {
-      npcs.push({ x, y });
+      npcs.push({ x, y, profileKey: npcProfileAssignments[positionKey(x, y)] });
       grid[y][x] = '.';
     }
   }));
@@ -149,7 +204,7 @@ function tryMove(dx, dy) {
   state.facing = [dx, dy];
   const target = { x: state.player.x + dx, y: state.player.y + dy };
   const occupant = npcAt(target.x, target.y);
-  if (occupant) return spendMinute(terrain.N.interact);
+  if (occupant) return spendMinute(npcDialogue(occupant));
   const tile = tileAt(target.x, target.y);
   if (tile.blocks) {
     writeLog(tile.description);
@@ -166,7 +221,7 @@ function interact() {
   const [dx, dy] = state.facing;
   const target = { x: state.player.x + dx, y: state.player.y + dy };
   const npc = npcAt(target.x, target.y);
-  if (npc) return spendMinute(terrain.N.interact);
+  if (npc) return spendMinute(npcDialogue(npc));
   const tile = tileAt(target.x, target.y);
   if (tile.interact) return spendMinute(tile.interact);
   writeLog(tile.description);
@@ -194,7 +249,7 @@ function moveNpcs() {
     if (!step) return traveler;
 
     if (step.x === state.player.x && step.y === state.player.y) {
-      remarks.push(randomItem(npcBlockedRemarks));
+      remarks.push(npcBlockedRemark(traveler));
       return traveler;
     }
 
@@ -210,19 +265,62 @@ function moveNpcs() {
 }
 
 function createNpcState(npc, index) {
-  const route = createNpcRoute(npc, index);
-  return { ...npc, route, target: route[1] };
+  const profile = npcDefinitions.find((definition) => definition.key === npc.profileKey) ?? npcDefinitions[index % npcDefinitions.length];
+  const route = createNpcRoute(npc, profile);
+  return { ...npc, profile, route, target: route[1] ?? route[0] };
 }
 
-function createNpcRoute(npc, index) {
+function createNpcRoute(npc, profile) {
   const trainStops = walkableTiles().filter((point) => tileAt(point.x, point.y).train);
   const shopStops = pointsAdjacentTo('S');
+  const kioskStops = pointsAdjacentTo('K');
   const walkStops = walkableTiles().filter((point) => !tileAt(point.x, point.y).train);
+  const platformStops = walkableTiles().filter((point) => nearbyTrain(point, 4));
   const start = { x: npc.x, y: npc.y };
 
-  if (index % 3 === 0 && trainStops.length && shopStops.length) return [randomItem(trainStops), randomItem(shopStops)];
-  if (index % 3 === 1 && trainStops.length) return [randomItem(walkStops), randomItem(trainStops)];
+  if (profile.routePreference === 'commuter to train' && trainStops.length) {
+    return [start, randomItem(trainStops)];
+  }
+
+  if (profile.routePreference === 'shopkeeper to kiosk') {
+    const shopStop = closestPoint(start, shopStops) ?? start;
+    const kioskStop = randomItem(kioskStops.length ? kioskStops : walkStops);
+    return [shopStop, kioskStop];
+  }
+
+  if (profile.routePreference === 'lost tourist pacing near platform') {
+    const pacingStops = uniquePoints([start, ...platformStops]);
+    return [start, randomItem(pacingStops.length > 1 ? pacingStops.filter((point) => point.x !== start.x || point.y !== start.y) : walkStops)];
+  }
+
   return [start, randomItem(walkStops)];
+}
+
+
+function npcDialogue(npc) {
+  return randomItem(npc.profile.dialogue) ?? terrain.N.interact;
+}
+
+function npcBlockedRemark(npc) {
+  return randomItem(npc.profile.blockedRemarks ?? npcBlockedRemarks) ?? randomItem(npcBlockedRemarks);
+}
+
+function nearbyTrain(point, distance) {
+  for (let y = point.y - distance; y <= point.y + distance; y += 1) {
+    for (let x = point.x - distance; x <= point.x + distance; x += 1) {
+      if (tileAt(x, y).train) return true;
+    }
+  }
+  return false;
+}
+
+function closestPoint(origin, points) {
+  return points.reduce((closest, point) => {
+    if (!closest) return point;
+    const distance = Math.abs(point.x - origin.x) + Math.abs(point.y - origin.y);
+    const closestDistance = Math.abs(closest.x - origin.x) + Math.abs(closest.y - origin.y);
+    return distance < closestDistance ? point : closest;
+  }, null);
 }
 
 function chooseNextNpcTarget(npc) {
@@ -477,7 +575,7 @@ function describeTile(x, y) {
   const npc = visible.has(`${x},${y}`) ? npcAt(x, y) : null;
   const item = visible.has(`${x},${y}`) ? itemAt(x, y) : null;
   if (item) return writeLog(itemDefinitions[item.type].description);
-  writeLog(npc ? terrain.N.description : tileAt(x, y).description);
+  writeLog(npc ? `${npc.profile.name}: ${npc.profile.description}` : tileAt(x, y).description);
 }
 
 function blocksView(x, y) {
