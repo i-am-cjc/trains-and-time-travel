@@ -18,6 +18,11 @@ let inspectMode = false;
 let state;
 let loopCount = 0;
 let resetEffectTimeout;
+const bloodStains = new Set();
+const carSpawnPoints = [
+  { x: -1, y: 37, dx: 1, sprite: 'carRight', delay: 0 },
+  { x: 80, y: 38, dx: -1, sprite: 'carLeft', delay: 2 },
+];
 
 const itemDefinitions = createItemDefinitions({ addLoopMinutes, writeLog, draw });
 const scheduledEvents = createScheduledEvents({ updateTerrain, moveItem, writeLog, queueStationMasterDoorAction });
@@ -79,6 +84,7 @@ function resetLoop(message, { effect = true } = {}) {
     facing: [0, 1],
     seen: new Set(),
     npcs: [],
+    cars: createCars(),
     stationMasterScolding: false,
   };
   state.npcs = maps.station.npcs.map(createNpcState);
@@ -112,6 +118,7 @@ function tryMove(dx, dy) {
   const target = { x: state.player.x + dx, y: state.player.y + dy };
   const occupant = npcAt(target.x, target.y);
   if (occupant) return spendMinute(npcDialogue(occupant));
+  if (carAt(target.x, target.y)) return killPlayer('You step into the road and a car hits you before the loop can blink.');
   const tile = tileAt(target.x, target.y);
   if (tile.blocks) {
     writeLog(tile.description);
@@ -140,9 +147,44 @@ function spendMinute(message) {
   state.minutesLeft -= 1;
   runScheduledEvents();
   moveNpcs();
+  if (moveCars()) return;
   if (state.minutesLeft <= 0) return resetLoop('The two-hour loop expires. Everything snaps back to the moment you arrived.');
   draw();
   if (message) writeLog(message);
+}
+
+
+function createCars() {
+  return carSpawnPoints.map((spawn, index) => ({
+    id: `car-${index}`,
+    mapKey: 'station',
+    x: spawn.x,
+    y: spawn.y,
+    dx: spawn.dx,
+    sprite: spawn.sprite,
+    spawnDelay: spawn.delay,
+    wait: spawn.delay,
+  }));
+}
+
+function moveCars() {
+  if (state.currentMapKey !== 'station') return false;
+  state.cars = state.cars.map((car) => {
+    if (car.wait > 0) return { ...car, wait: car.wait - 1 };
+    const nextX = car.x + car.dx;
+    const beyondRoad = nextX < -1 || nextX > maps.station.width;
+    if (beyondRoad) return { ...car, x: car.dx > 0 ? -1 : maps.station.width, wait: 3 };
+    return { ...car, x: nextX };
+  });
+  const hitCar = carAt(state.player.x, state.player.y);
+  if (!hitCar) return false;
+  killPlayer('A car barrels down the road on the left-hand lane and knocks you out of the loop.');
+  return true;
+}
+
+function killPlayer(message) {
+  bloodStains.add(`station:${positionKey(state.player.x, state.player.y)}`);
+  resetLoop(message);
 }
 
 function runScheduledEvents() {
@@ -508,6 +550,9 @@ function draw() {
   state.items.filter((item) => (item.mapKey ?? 'station') === state.currentMapKey).forEach((item) => {
     if (visible.has(`${item.x},${item.y}`)) drawItem(item, true);
   });
+  state.cars.filter((car) => car.mapKey === state.currentMapKey).forEach((car) => {
+    if (visible.has(`${car.x},${car.y}`)) drawSprite(car.x, car.y, car.sprite, true);
+  });
   state.npcs.filter((npc) => npc.mapKey === state.currentMapKey).forEach((npc) => {
     if (visible.has(`${npc.x},${npc.y}`)) drawSprite(npc.x, npc.y, npc.profile.key === 'stationMaster' ? 'M' : 'N', true);
   });
@@ -535,6 +580,7 @@ function drawTile(x, y, isVisible) {
   const rememberedOnly = remembered && !isVisible;
   if (!isVisible && !remembered) return drawSprite(x, y, 'unknown', true);
   drawSprite(x, y, map.grid[y][x], true, rememberedOnly, rememberedOnly ? 0.67 : 1);
+  if (bloodStains.has(`${state.currentMapKey}:${positionKey(x, y)}`)) drawSprite(x, y, 'blood', true, rememberedOnly, rememberedOnly ? 0.67 : 1);
 }
 
 function drawSprite(x, y, sprite, visible, desaturated = false, alpha = 1) {
@@ -564,6 +610,10 @@ function drawSprite(x, y, sprite, visible, desaturated = false, alpha = 1) {
     case 'P':
       g.circle(px + 8, py + 8, 1.5).fill(tone(0x7b8189));
       g.circle(px + 23, py + 19, 1.5).fill(tone(0x7b8189));
+      break;
+    case 'h':
+      g.rect(px, py + 14, TILE_SIZE - 1, 3).fill(tone(0xf8fafc));
+      g.rect(px + 13, py + 14, 6, 3).fill(tone(0x1f2933));
       break;
     case '-':
       g.rect(px, py, TILE_SIZE - 1, 5).fill(tone(0xc7cbd1));
@@ -604,10 +654,13 @@ function drawSprite(x, y, sprite, visible, desaturated = false, alpha = 1) {
       g.rect(px + 21, py + 23, 3, 6).fill(tone(0x4b3522));
       break;
     case 'C':
-      g.roundRect(px + 4, py + 9, 24, 14, 4).fill(tone(0xa5adbb));
+    case 'carLeft':
+    case 'carRight':
+      g.roundRect(px + 4, py + 9, 24, 14, 4).fill(tone(sprite === 'C' ? 0xa5adbb : 0xef4444));
       g.rect(px + 10, py + 5, 12, 7).fill(tone(0x79d2ff));
       g.circle(px + 10, py + 24, 3).fill(tone(0x15181f));
       g.circle(px + 23, py + 24, 3).fill(tone(0x15181f));
+      g.circle(px + (sprite === 'carLeft' ? 6 : 26), py + 16, 2).fill(tone(0xfef3c7));
       break;
     case 'S':
       g.rect(px + 5, py + 7, 22, 18).fill(tone(0xa855f7));
@@ -695,6 +748,11 @@ function drawSprite(x, y, sprite, visible, desaturated = false, alpha = 1) {
       g.rect(px + 8, py + 26, 6, 4).fill(tone(0x20242a));
       g.rect(px + 18, py + 26, 6, 4).fill(tone(0x20242a));
       break;
+    case 'blood':
+      g.circle(px + 16, py + 16, 8).fill(tone(0x7f1d1d));
+      g.circle(px + 10, py + 20, 4).fill(tone(0x991b1b));
+      g.circle(px + 22, py + 11, 3).fill(tone(0x450a0a));
+      break;
     case 'unknown':
       break;
     default:
@@ -707,6 +765,8 @@ function drawSprite(x, y, sprite, visible, desaturated = false, alpha = 1) {
 function baseColorFor(sprite) {
   if (sprite === 'unknown') return 0x000000;
   if (sprite === 'player') return 0x264757;
+  if (sprite === 'blood') return 0x000000;
+  if (sprite === 'carLeft' || sprite === 'carRight') return 0x1f2933;
   return terrain[sprite]?.color ?? 0x000000;
 }
 
@@ -761,6 +821,10 @@ function tileAtFor(mapKey, x, y) {
 
 function npcAt(x, y) {
   return state.npcs.find((npc) => npc.mapKey === state.currentMapKey && npc.x === x && npc.y === y);
+}
+
+function carAt(x, y) {
+  return state.cars.find((car) => car.mapKey === state.currentMapKey && car.x === x && car.y === y && car.wait <= 0);
 }
 
 function itemAt(x, y) {

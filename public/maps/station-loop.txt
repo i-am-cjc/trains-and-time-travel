@@ -1,5 +1,5 @@
 ; Trains and Time Travel starter map
-; Legend: # wall, . floor/path, = train line, T train door, P player start,
+; Legend: # wall, . floor/path, = train line, T train door, P player start, h road,
 ;         C car, S shop, N townsperson, M station master, B bench, K kiosk, ~ grass, D door,
 ;         X locked door, U stairs,
 ;         - platform edge, A announcement board, L lamp, V vending machine,
@@ -35,6 +35,6 @@
 #..................#......#............#.........W.............................#
 #..................W..S...D............D.........#.............................#
 #..................########............##W#####W##.............................#
-#..............................................................................#
-#..............................................................................#
+hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh
+hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh
 ################################################################################
