@@ -79,7 +79,8 @@ const npcProfileAssignments = {
 
 const terrain = {
   '#': { color: 0x38404d, blocks: true, description: 'A solid wall blocks the way.' },
-  '.': { color: 0x656b72, blocks: false, description: 'Station paving.' },
+  '.': { color: 0x656b72, blocks: false, blocksView: false, description: 'Station paving.' },
+  '-': { color: 0x7f858c, blocks: false, blocksView: false, description: 'A raised platform edge running beside the track.' },
   '=': { color: 0x20242a, blocks: true, blocksView: false, description: 'The train line blocks the northern edge of town.' },
   'T': { color: 0x335f8f, blocks: false, blocksView: true, train: true, description: 'The waiting train. Step back aboard to end this loop.' },
   'D': { color: 0x9b6a3c, blocks: false, blocksView: true, description: 'An open doorway blocks your line of sight, but you can pass through.' },
@@ -89,6 +90,12 @@ const terrain = {
   'C': { color: 0x8d99ae, blocks: true, blocksView: false, description: 'A parked car.' },
   'S': { color: 0xc084fc, blocks: true, blocksView: false, interact: 'The shop window is full of headlines you swear you have already read.', description: 'A small shop.' },
   'K': { color: 0xf6c453, blocks: true, blocksView: false, interact: 'The kiosk clock ticks forward exactly one minute.', description: 'A kiosk.' },
+  'A': { color: 0x2dd4bf, blocks: true, blocksView: false, interact: 'The board flips through destinations you remember from previous loops.', description: 'An announcement board listing departures and impossible delays.' },
+  'L': { color: 0xfff3a3, blocks: true, blocksView: false, interact: 'The lamp hums warmly, then flickers in a rhythm you almost recognize.', description: 'A platform lamp casting a steady pool of light.' },
+  'V': { color: 0xef4444, blocks: true, blocksView: false, interact: 'The vending machine offers the same snack from three different hours.', description: 'A humming vending machine.' },
+  'G': { color: 0x9b6a3c, blocks: true, blocksView: false, interact: 'The luggage tag is addressed to a date that has not happened yet.', description: 'A stack of unattended luggage.' },
+  'R': { color: 0x64748b, blocks: true, blocksView: false, interact: 'The ticket barrier rejects your ticket, then stamps tomorrow on it.', description: 'A closed ticket barrier.' },
+  'O': { color: 0xf8fafc, blocks: true, blocksView: false, interact: 'The station clock ticks once, but every hand points toward departure.', description: 'A round station clock.' },
   'N': { color: 0xff8a65, blocks: true, blocksView: false, npc: true, interact: 'They mutter about catching the same train again.', description: 'A townsperson.' },
   'P': { color: 0x656b72, blocks: false, start: true, description: 'Your starting point on the platform.' },
   ' ': { color: 0x111111, blocks: true, description: 'An unmapped void.' },
@@ -544,6 +551,12 @@ function drawSprite(x, y, sprite, visible, desaturated = false, alpha = 1) {
       g.circle(px + 8, py + 8, 1.5).fill(tone(0x7b8189));
       g.circle(px + 23, py + 19, 1.5).fill(tone(0x7b8189));
       break;
+    case '-':
+      g.rect(px, py, TILE_SIZE - 1, 5).fill(tone(0xc7cbd1));
+      g.rect(px, py + 5, TILE_SIZE - 1, 3).fill(tone(0xf6c453));
+      g.circle(px + 8, py + 18, 1.5).fill(tone(0x9aa1aa));
+      g.circle(px + 23, py + 25, 1.5).fill(tone(0x9aa1aa));
+      break;
     case '=':
       g.rect(px + 5, py, 5, TILE_SIZE - 1).fill(tone(0x0f1115));
       g.rect(px + 22, py, 5, TILE_SIZE - 1).fill(tone(0x0f1115));
@@ -592,6 +605,39 @@ function drawSprite(x, y, sprite, visible, desaturated = false, alpha = 1) {
       g.rect(px + 5, py + 5, 22, 5).fill(tone(0xd97706));
       g.circle(px + 16, py + 17, 5).fill(tone(0xfff5cc));
       g.moveTo(px + 16, py + 17).lineTo(px + 16, py + 13).lineTo(px + 19, py + 17).stroke({ color: tone(0x20242a), width: 1.5 });
+      break;
+    case 'A':
+      g.rect(px + 4, py + 6, 24, 15).fill(tone(0x0f766e));
+      g.rect(px + 7, py + 9, 18, 2).fill(tone(0xccfbf1));
+      g.rect(px + 7, py + 14, 14, 2).fill(tone(0xccfbf1));
+      g.rect(px + 8, py + 21, 3, 8).fill(tone(0x20242a));
+      g.rect(px + 21, py + 21, 3, 8).fill(tone(0x20242a));
+      break;
+    case 'L':
+      g.rect(px + 15, py + 9, 3, 19).fill(tone(0x4b5563));
+      g.circle(px + 16, py + 7, 6).fill(tone(0xfff3a3));
+      g.circle(px + 16, py + 7, 3).fill(tone(0xfacc15));
+      break;
+    case 'V':
+      g.roundRect(px + 7, py + 4, 18, 24, 3).fill(tone(0xdc2626));
+      g.rect(px + 10, py + 7, 8, 12).fill(tone(0x7dd3fc));
+      g.rect(px + 20, py + 8, 2, 10).fill(tone(0xfef3c7));
+      g.rect(px + 11, py + 23, 10, 2).fill(tone(0x111827));
+      break;
+    case 'G':
+      g.roundRect(px + 6, py + 12, 20, 14, 2).fill(tone(0x8b5a2b));
+      g.rect(px + 12, py + 8, 8, 5).stroke({ color: tone(0x3f2a17), width: 2 });
+      g.rect(px + 9, py + 16, 14, 2).fill(tone(0xc49a6c));
+      break;
+    case 'R':
+      g.rect(px + 5, py + 8, 6, 18).fill(tone(0x475569));
+      g.rect(px + 21, py + 8, 6, 18).fill(tone(0x475569));
+      g.rect(px + 10, py + 14, 12, 4).fill(tone(0xe11d48));
+      break;
+    case 'O':
+      g.circle(px + 16, py + 16, 10).fill(tone(0xf8fafc));
+      g.circle(px + 16, py + 16, 8).stroke({ color: tone(0x1f2937), width: 2 });
+      g.moveTo(px + 16, py + 16).lineTo(px + 16, py + 10).lineTo(px + 20, py + 16).stroke({ color: tone(0x1f2937), width: 1.5 });
       break;
     case 'N':
     case 'player':
