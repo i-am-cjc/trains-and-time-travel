@@ -1,9 +1,9 @@
 import { Application, Container, Graphics } from 'pixi.js';
 import './styles.css';
 
-const TILE_SIZE = 20;
-const LOOP_MINUTES = 60;
-const SIGHT_RADIUS = 8;
+const TILE_SIZE = 32;
+const LOOP_MINUTES = 120;
+const SIGHT_RADIUS = 100;
 const MAP_URL = '/maps/station-loop.txt';
 const RESET_EFFECT_MS = 900;
 const MAX_LOG_ENTRIES = 80;
@@ -48,7 +48,7 @@ document.querySelector('#game').appendChild(app.canvas);
 app.stage.addChild(world);
 
 const map = await loadMap(MAP_URL);
-resetLoop('The doors hiss open. You step onto the platform with one hour before everything resets.', { effect: false });
+resetLoop('The doors hiss open. You step onto the platform with two hours before everything resets.', { effect: false });
 
 window.addEventListener('keydown', (event) => {
   if (inspectMode) return;
@@ -115,7 +115,7 @@ function tryMove(dx, dy) {
     return;
   }
   state.player = target;
-  spendMinute(tile.train ? 'You step back onto the train and deliberately end the loop.' : 'You move through the town.');
+  spendMinute(tile.train ? 'You step back onto the train and deliberately end the loop.' : null);
   if (tile.train) resetLoop('The train pulls away, then arrives again. The loop begins from the platform.');
 }
 
@@ -132,9 +132,9 @@ function interact() {
 function spendMinute(message) {
   state.minutesLeft -= 1;
   moveNpcs();
-  if (state.minutesLeft <= 0) return resetLoop('The hour expires. Everything snaps back to the moment you arrived.');
+  if (state.minutesLeft <= 0) return resetLoop('The two-hour loop expires. Everything snaps back to the moment you arrived.');
   draw();
-  writeLog(message);
+  if (message) writeLog(message);
 }
 
 function moveNpcs() {
