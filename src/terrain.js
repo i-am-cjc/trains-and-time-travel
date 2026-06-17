@@ -1,6 +1,7 @@
 export const terrain = {
   '#': { color: 0x38404d, blocks: true, description: 'A solid wall blocks the way.' },
   '.': { color: 0x656b72, blocks: false, blocksView: false, description: 'Station paving.' },
+  'h': { color: 0x1f2933, blocks: false, blocksView: false, road: true, description: 'A busy two-lane road. Traffic keeps left, and the cars do not stop for time travelers.' },
   '-': { color: 0x7f858c, blocks: false, blocksView: false, description: 'A raised platform edge running beside the track.' },
   '=': { color: 0x20242a, blocks: false, blocksView: false, track: true, description: 'The train tracks hum with dangerous loop-energy. The station master will not approve.' },
   'T': { color: 0x335f8f, blocks: false, blocksView: true, train: true, description: 'The waiting train. Step back aboard to end this loop.' },
