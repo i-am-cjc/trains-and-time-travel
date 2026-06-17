@@ -88,6 +88,7 @@ function resetLoop(message, { effect = true } = {}) {
     stationMasterScolding: false,
   };
   state.npcs = maps.station.npcs.map(createNpcState);
+  seedRoadTraffic();
   if (effect) playResetEffect();
   draw();
   renderInventory();
@@ -154,26 +155,37 @@ function spendMinute(message) {
 }
 
 
+function isCarSpawner(item) {
+  return item.type === 'carSpawnerLeft' || item.type === 'carSpawnerRight';
+}
+
 function carSpawnerItems() {
-  return state.items.filter((item) => item.type === 'carSpawnerLeft' || item.type === 'carSpawnerRight');
+  return state.items.filter(isCarSpawner);
 }
 
 function createCarSpawnTimers() {
   return Object.fromEntries(placedItems
-    .filter((item) => item.type === 'carSpawnerLeft' || item.type === 'carSpawnerRight')
-    .map((spawner) => [spawner.id, nextCarSpawnDelay()]));
+    .filter(isCarSpawner)
+    .map((spawner) => [spawner.id, 0]));
+}
+
+function seedRoadTraffic() {
+  carSpawnerItems().forEach((spawner) => spawnCar(spawner));
 }
 
 function spawnCar(spawner) {
+  const mapKey = spawner.mapKey ?? 'station';
+  if (carAtOnMap(mapKey, spawner.x, spawner.y)) return false;
   state.cars.push({
     id: `car-${state.nextCarId}`,
-    mapKey: spawner.mapKey ?? 'station',
+    mapKey,
     x: spawner.x,
     y: spawner.y,
     dx: spawner.dx,
     sprite: spawner.dx < 0 ? 'carLeft' : 'carRight',
   });
   state.nextCarId += 1;
+  return true;
 }
 
 function nextCarSpawnDelay() {
@@ -184,7 +196,7 @@ function moveCars() {
   updateCarSpawns();
   state.cars = state.cars
     .map((car) => ({ ...car, x: car.x + car.dx }))
-    .filter((car) => car.x >= 0 && car.x < maps.station.width);
+    .filter((car) => car.x >= 0 && car.x < maps[car.mapKey].width);
 
   if (state.currentMapKey !== 'station') return false;
   const hitCar = carAt(state.player.x, state.player.y);
@@ -201,8 +213,7 @@ function updateCarSpawns() {
       return;
     }
 
-    spawnCar(spawner);
-    state.carSpawnTimers[spawner.id] = nextCarSpawnDelay();
+    if (spawnCar(spawner)) state.carSpawnTimers[spawner.id] = nextCarSpawnDelay();
   });
 }
 
@@ -575,9 +586,11 @@ function draw() {
       drawTile(x, y, visible.has(`${x},${y}`));
     }
   }
-  state.items.filter((item) => (item.mapKey ?? 'station') === state.currentMapKey).forEach((item) => {
-    if (visible.has(`${item.x},${item.y}`)) drawItem(item, true);
-  });
+  state.items
+    .filter((item) => !isCarSpawner(item) && (item.mapKey ?? 'station') === state.currentMapKey)
+    .forEach((item) => {
+      if (visible.has(`${item.x},${item.y}`)) drawItem(item, true);
+    });
   state.cars.filter((car) => car.mapKey === state.currentMapKey).forEach((car) => {
     if (visible.has(`${car.x},${car.y}`)) drawSprite(car.x, car.y, car.sprite, true);
   });
@@ -593,11 +606,6 @@ function draw() {
 function drawItem(item, visible) {
   const definition = itemDefinitions[item.type];
   if (!visible) return;
-  if (item.type === 'carSpawnerLeft' || item.type === 'carSpawnerRight') {
-    drawSprite(item.x, item.y, 'h', true);
-    return;
-  }
-
   const g = new Graphics();
   const px = item.x * TILE_SIZE;
   const py = item.y * TILE_SIZE;
@@ -857,7 +865,11 @@ function npcAt(x, y) {
 }
 
 function carAt(x, y) {
-  return state.cars.find((car) => car.mapKey === state.currentMapKey && car.x === x && car.y === y);
+  return carAtOnMap(state.currentMapKey, x, y);
+}
+
+function carAtOnMap(mapKey, x, y) {
+  return state.cars.find((car) => car.mapKey === mapKey && car.x === x && car.y === y);
 }
 
 function itemAt(x, y) {
