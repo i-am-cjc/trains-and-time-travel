@@ -100,6 +100,9 @@ async function loadMap(url, mapKey) {
   const rows = text.split('\n').filter((line) => line && !line.startsWith(';'));
   const width = Math.max(...rows.map((row) => row.length));
   const grid = rows.map((row) => row.padEnd(width, '#').split(''));
+  const walkable = [];
+  const adjacentByCellType = {};
+  const trainTiles = [];
   const npcs = [];
   const stairs = [];
   let start = { x: 1, y: 1 };
@@ -111,7 +114,23 @@ async function loadMap(url, mapKey) {
       grid[y][x] = '.';
     }
   }));
-  return { key: mapKey, grid, height: grid.length, width, start, stairs, npcs };
+
+  grid.forEach((row, y) => row.forEach((cell, x) => {
+    const tile = terrain[cell] ?? terrain[' '];
+    if (!tile.blocks) walkable.push({ x, y });
+    if (tile.train) trainTiles.push({ x, y });
+    if (!adjacentByCellType[cell]) adjacentByCellType[cell] = [];
+    adjacentByCellType[cell].push(...neighborsOf({ x, y }).filter((point) => {
+      const neighbor = terrain[grid[point.y]?.[point.x]] ?? terrain[' '];
+      return !neighbor.blocks;
+    }));
+  }));
+
+  Object.entries(adjacentByCellType).forEach(([cellType, points]) => {
+    adjacentByCellType[cellType] = uniquePoints(points);
+  });
+
+  return { key: mapKey, grid, height: grid.length, width, start, stairs, npcs, walkable, adjacentByCellType, trainTiles };
 }
 
 function tryMove(dx, dy) {
@@ -433,7 +452,7 @@ function createNpcState(npc, index) {
 }
 
 function createNpcRoute(npc, profile) {
-  const trainStops = walkableTiles(npc.mapKey).filter((point) => tileAtFor(npc.mapKey, point.x, point.y).train);
+  const trainStops = maps[npc.mapKey].trainTiles;
   const shopStops = pointsAdjacentTo('S', npc.mapKey);
   const kioskStops = pointsAdjacentTo('K', npc.mapKey);
   const walkStops = walkableTiles(npc.mapKey).filter((point) => !tileAtFor(npc.mapKey, point.x, point.y).train);
@@ -534,25 +553,11 @@ function neighborsOf(point) {
 }
 
 function pointsAdjacentTo(cellType, mapKey = state.currentMapKey) {
-  const points = [];
-  maps[mapKey].grid.forEach((row, y) => row.forEach((cell, x) => {
-    if (cell !== cellType) return;
-    neighborsOf({ x, y }).forEach((point) => {
-      if (!tileAtFor(mapKey, point.x, point.y).blocks) points.push(point);
-    });
-  }));
-  return uniquePoints(points);
+  return maps[mapKey].adjacentByCellType[cellType] ?? [];
 }
 
 function walkableTiles(mapKey = state.currentMapKey) {
-  const targetMap = maps[mapKey];
-  const points = [];
-  for (let y = 0; y < targetMap.height; y += 1) {
-    for (let x = 0; x < targetMap.width; x += 1) {
-      if (!tileAtFor(mapKey, x, y).blocks) points.push({ x, y });
-    }
-  }
-  return points;
+  return maps[mapKey].walkable;
 }
 
 function uniquePoints(points) {
@@ -578,11 +583,12 @@ function positionKey(x, y) {
 }
 
 function draw() {
-  world.removeChildren();
+  world.removeChildren().forEach((child) => child.destroy());
   const visible = visibleTiles();
   visible.forEach((key) => state.seen.add(key));
-  for (let y = 0; y < map.height; y += 1) {
-    for (let x = 0; x < map.width; x += 1) {
+  const bounds = visibleDrawBounds();
+  for (let y = bounds.minY; y <= bounds.maxY; y += 1) {
+    for (let x = bounds.minX; x <= bounds.maxX; x += 1) {
       drawTile(x, y, visible.has(`${x},${y}`));
     }
   }
@@ -601,6 +607,17 @@ function draw() {
   world.x = Math.round(app.screen.width / 2 - (state.player.x + 0.5) * TILE_SIZE);
   world.y = Math.round(app.screen.height / 2 - (state.player.y + 0.5) * TILE_SIZE);
   hud.textContent = `Loop ${loopCount} · Minute ${elapsedMinutes()} / ${state.loopLimit} · ${state.minutesLeft} min left`;
+}
+
+function visibleDrawBounds() {
+  const halfTilesWide = Math.ceil(app.screen.width / TILE_SIZE / 2) + 2;
+  const halfTilesHigh = Math.ceil(app.screen.height / TILE_SIZE / 2) + 2;
+  return {
+    minX: Math.max(0, state.player.x - halfTilesWide),
+    maxX: Math.min(map.width - 1, state.player.x + halfTilesWide),
+    minY: Math.max(0, state.player.y - halfTilesHigh),
+    maxY: Math.min(map.height - 1, state.player.y + halfTilesHigh),
+  };
 }
 
 function drawItem(item, visible) {
@@ -857,7 +874,8 @@ function tileAtFor(mapKey, x, y) {
   const override = state?.tileOverrides?.[mapKey]?.[positionKey(x, y)];
   const tileType = override ?? targetMap.grid[y]?.[x];
   const baseTile = terrain[tileType] ?? terrain[' '];
-  return { ...baseTile, ...(state?.terrainOverrides[tileType] ?? {}) };
+  const overrideTerrain = state?.terrainOverrides[tileType];
+  return overrideTerrain ? { ...baseTile, ...overrideTerrain } : baseTile;
 }
 
 function npcAt(x, y) {
