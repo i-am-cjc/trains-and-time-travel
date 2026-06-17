@@ -14,6 +14,9 @@ const inventoryList = document.querySelector('#inventory-list');
 const inspectButton = document.querySelector('#inspect-button');
 const inspectStatus = document.querySelector('#inspect-status');
 const loopEffect = document.querySelector('#loop-effect');
+const readableOverlay = document.querySelector('#readable-overlay');
+const readableTitle = document.querySelector('#readable-title');
+const readableText = document.querySelector('#readable-text');
 let inspectMode = false;
 let state;
 let loopCount = 0;
@@ -159,6 +162,10 @@ function interact() {
   const npc = npcAt(target.x, target.y);
   if (npc) return spendMinute(npcDialogue(npc));
   const tile = tileAt(target.x, target.y);
+  if (tile.readableText) {
+    showReadableOverlay(tile);
+    return spendMinute(tile.interact ?? tile.description);
+  }
   if (tile.interact) return spendMinute(tile.interact);
   writeLog(tile.description);
 }
@@ -659,7 +666,9 @@ function drawTile(x, y, isVisible) {
   if (!isVisible && !remembered) return drawSprite(x, y, 'unknown', true);
   drawSprite(x, y, map.grid[y][x], true, rememberedOnly, rememberedOnly ? 0.67 : 1);
   if (bloodStains.has(`${state.currentMapKey}:${positionKey(x, y)}`)) drawSprite(x, y, 'blood', true, rememberedOnly, rememberedOnly ? 0.67 : 1);
+  if (isVisible && tileAt(x, y).readableText) drawReadableBadge(x, y);
 }
+
 
 function drawSprite(x, y, sprite, visible, desaturated = false, alpha = 1) {
   const g = new Graphics();
@@ -779,6 +788,13 @@ function drawSprite(x, y, sprite, visible, desaturated = false, alpha = 1) {
         g.moveTo(px + 16, py + 25).lineTo(px + 24, py + 14).lineTo(px + 19, py + 14).lineTo(px + 19, py + 7).lineTo(px + 13, py + 7).lineTo(px + 13, py + 14).lineTo(px + 8, py + 14).fill(tone(0xf8fafc));
       }
       break;
+    case 'Y':
+      g.rect(px + 6, py + 8, 20, 18).fill(tone(0x0ea5e9));
+      g.rect(px + 8, py + 11, 16, 12).fill(tone(0xf8fafc));
+      g.rect(px + 10, py + 13, 12, 2).fill(tone(0x1d2430));
+      g.rect(px + 10, py + 17, 8, 2).fill(tone(0x1d2430));
+      g.rect(px + 8, py + 4, 16, 5).fill(tone(0x0369a1));
+      break;
     case 'K':
       g.rect(px + 7, py + 8, 18, 18).fill(tone(0xf6c453));
       g.rect(px + 5, py + 5, 22, 5).fill(tone(0xd97706));
@@ -840,6 +856,16 @@ function drawSprite(x, y, sprite, visible, desaturated = false, alpha = 1) {
   world.addChild(g);
 }
 
+function drawReadableBadge(x, y) {
+  const g = new Graphics();
+  const px = x * TILE_SIZE;
+  const py = y * TILE_SIZE;
+  g.roundRect(px + 20, py + 3, 9, 9, 2).fill(0xf6f1df);
+  g.rect(px + 23, py + 5, 3, 1.5).fill(0x1d2430);
+  g.rect(px + 23, py + 8, 3, 1.5).fill(0x1d2430);
+  world.addChild(g);
+}
+
 function baseColorFor(sprite) {
   if (sprite === 'unknown') return 0x000000;
   if (sprite === 'player') return 0x264757;
@@ -877,7 +903,9 @@ function describeTile(x, y) {
   const npc = visible.has(`${x},${y}`) ? npcAt(x, y) : null;
   const item = visible.has(`${x},${y}`) ? itemAt(x, y) : null;
   if (item) return writeLog(itemDefinitions[item.type].description);
-  writeLog(npc ? `${npc.profile.name}: ${npc.profile.description}` : tileAt(x, y).description);
+  const tile = tileAt(x, y);
+  if (!npc && tile.readableText) showReadableOverlay(tile);
+  writeLog(npc ? `${npc.profile.name}: ${npc.profile.description}` : tile.description);
 }
 
 function blocksView(x, y) {
@@ -961,6 +989,17 @@ function renderInventory() {
     button.append(name, description);
     inventoryList.appendChild(button);
   });
+}
+
+function showReadableOverlay(tile) {
+  readableTitle.textContent = tile.readableTitle ?? 'Readable text';
+  const lines = Array.isArray(tile.readableText) ? tile.readableText : [tile.readableText];
+  readableText.replaceChildren(...lines.map((line) => {
+    const paragraph = document.createElement('p');
+    paragraph.textContent = line;
+    return paragraph;
+  }));
+  if (!readableOverlay.open) readableOverlay.show();
 }
 
 function writeLog(message) {
