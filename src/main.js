@@ -19,9 +19,11 @@ let state;
 let loopCount = 0;
 let resetEffectTimeout;
 const bloodStains = new Set();
+const CAR_SPAWN_MINUTES = 10;
+const CAR_SPAWN_MAX_MINUTES = 15;
 const carSpawnPoints = [
-  { x: -1, y: 37, dx: 1, sprite: 'carRight', delay: 0 },
-  { x: 80, y: 38, dx: -1, sprite: 'carLeft', delay: 2 },
+  { key: 'left', x: -1, y: 37, dx: 1, sprite: 'carRight', initialDelay: 0 },
+  { key: 'right', x: 80, y: 38, dx: -1, sprite: 'carLeft', initialDelay: 2 },
 ];
 
 const itemDefinitions = createItemDefinitions({ addLoopMinutes, writeLog, draw });
@@ -84,10 +86,13 @@ function resetLoop(message, { effect = true } = {}) {
     facing: [0, 1],
     seen: new Set(),
     npcs: [],
-    cars: createCars(),
+    cars: [],
+    nextCarId: 0,
+    carSpawnTimers: createCarSpawnTimers(),
     stationMasterScolding: false,
   };
   state.npcs = maps.station.npcs.map(createNpcState);
+  spawnInitialCars();
   if (effect) playResetEffect();
   draw();
   renderInventory();
@@ -154,32 +159,57 @@ function spendMinute(message) {
 }
 
 
-function createCars() {
-  return carSpawnPoints.map((spawn, index) => ({
-    id: `car-${index}`,
+function createCarSpawnTimers() {
+  return Object.fromEntries(carSpawnPoints.map((spawn) => [
+    spawn.key,
+    spawn.initialDelay + nextCarSpawnDelay(),
+  ]));
+}
+
+function spawnInitialCars() {
+  carSpawnPoints.forEach((spawn) => spawnCar(spawn));
+}
+
+function spawnCar(spawn) {
+  state.cars.push({
+    id: `car-${state.nextCarId}`,
     mapKey: 'station',
     x: spawn.x,
     y: spawn.y,
     dx: spawn.dx,
     sprite: spawn.sprite,
-    spawnDelay: spawn.delay,
-    wait: spawn.delay,
-  }));
+  });
+  state.nextCarId += 1;
+}
+
+function nextCarSpawnDelay() {
+  return randomInteger(CAR_SPAWN_MINUTES, CAR_SPAWN_MAX_MINUTES);
 }
 
 function moveCars() {
+  updateCarSpawns();
+  state.cars = state.cars
+    .map((car) => ({ ...car, x: car.x + car.dx }))
+    .filter((car) => car.x >= -1 && car.x <= maps.station.width);
+
   if (state.currentMapKey !== 'station') return false;
-  state.cars = state.cars.map((car) => {
-    if (car.wait > 0) return { ...car, wait: car.wait - 1 };
-    const nextX = car.x + car.dx;
-    const beyondRoad = nextX < -1 || nextX > maps.station.width;
-    if (beyondRoad) return { ...car, x: car.dx > 0 ? -1 : maps.station.width, wait: 3 };
-    return { ...car, x: nextX };
-  });
   const hitCar = carAt(state.player.x, state.player.y);
   if (!hitCar) return false;
   killPlayer('A car barrels down the road on the left-hand lane and knocks you out of the loop.');
   return true;
+}
+
+function updateCarSpawns() {
+  carSpawnPoints.forEach((spawn) => {
+    const minutesUntilSpawn = state.carSpawnTimers[spawn.key] ?? 0;
+    if (minutesUntilSpawn > 0) {
+      state.carSpawnTimers[spawn.key] = minutesUntilSpawn - 1;
+      return;
+    }
+
+    spawnCar(spawn);
+    state.carSpawnTimers[spawn.key] = nextCarSpawnDelay();
+  });
 }
 
 function killPlayer(message) {
@@ -532,6 +562,10 @@ function uniquePoints(points) {
 
 function randomItem(items) {
   return items[Math.floor(Math.random() * items.length)];
+}
+
+function randomInteger(min, max) {
+  return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 
 function positionKey(x, y) {
