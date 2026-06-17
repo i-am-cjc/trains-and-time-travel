@@ -285,8 +285,9 @@ function resetLoop(message, { effect = true } = {}) {
     triggeredEventIds: new Set(),
     facing: [0, 1],
     seen: new Set(),
-    npcs: maps.station.npcs.map(createNpcState),
+    npcs: [],
   };
+  state.npcs = maps.station.npcs.map(createNpcState);
   if (effect) playResetEffect();
   draw();
   renderInventory();
@@ -464,11 +465,11 @@ function createNpcState(npc, index) {
 }
 
 function createNpcRoute(npc, profile) {
-  const trainStops = walkableTiles().filter((point) => tileAt(point.x, point.y).train);
-  const shopStops = pointsAdjacentTo('S');
-  const kioskStops = pointsAdjacentTo('K');
-  const walkStops = walkableTiles().filter((point) => !tileAt(point.x, point.y).train);
-  const platformStops = walkableTiles().filter((point) => nearbyTrain(point, 4));
+  const trainStops = walkableTiles(npc.mapKey).filter((point) => tileAtFor(npc.mapKey, point.x, point.y).train);
+  const shopStops = pointsAdjacentTo('S', npc.mapKey);
+  const kioskStops = pointsAdjacentTo('K', npc.mapKey);
+  const walkStops = walkableTiles(npc.mapKey).filter((point) => !tileAtFor(npc.mapKey, point.x, point.y).train);
+  const platformStops = walkableTiles(npc.mapKey).filter((point) => nearbyTrain(point, 4, npc.mapKey));
   const start = { x: npc.x, y: npc.y };
 
   if (profile.routePreference === 'station master timed door') {
@@ -502,10 +503,10 @@ function npcBlockedRemark(npc) {
   return randomItem(npc.profile.blockedRemarks ?? npcBlockedRemarks) ?? randomItem(npcBlockedRemarks);
 }
 
-function nearbyTrain(point, distance) {
+function nearbyTrain(point, distance, mapKey = state.currentMapKey) {
   for (let y = point.y - distance; y <= point.y + distance; y += 1) {
     for (let x = point.x - distance; x <= point.x + distance; x += 1) {
-      if (tileAt(x, y).train) return true;
+      if (tileAtFor(mapKey, x, y).train) return true;
     }
   }
   return false;
@@ -564,22 +565,23 @@ function neighborsOf(point) {
   ];
 }
 
-function pointsAdjacentTo(cellType) {
+function pointsAdjacentTo(cellType, mapKey = state.currentMapKey) {
   const points = [];
-  grid.forEach((row, y) => row.forEach((cell, x) => {
+  maps[mapKey].grid.forEach((row, y) => row.forEach((cell, x) => {
     if (cell !== cellType) return;
     neighborsOf({ x, y }).forEach((point) => {
-      if (!tileAt(point.x, point.y).blocks) points.push(point);
+      if (!tileAtFor(mapKey, point.x, point.y).blocks) points.push(point);
     });
   }));
   return uniquePoints(points);
 }
 
-function walkableTiles() {
+function walkableTiles(mapKey = state.currentMapKey) {
+  const targetMap = maps[mapKey];
   const points = [];
-  for (let y = 0; y < map.height; y += 1) {
-    for (let x = 0; x < map.width; x += 1) {
-      if (!tileAt(x, y).blocks) points.push({ x, y });
+  for (let y = 0; y < targetMap.height; y += 1) {
+    for (let x = 0; x < targetMap.width; x += 1) {
+      if (!tileAtFor(mapKey, x, y).blocks) points.push({ x, y });
     }
   }
   return points;
