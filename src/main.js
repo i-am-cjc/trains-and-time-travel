@@ -1,146 +1,10 @@
 import { Application, Container, Graphics } from 'pixi.js';
+import { directions, LOOP_MINUTES, MAP_URLS, MAX_LOG_ENTRIES, RESET_EFFECT_MS, SIGHT_RADIUS, TILE_SIZE } from './constants.js';
+import { createScheduledEvents } from './events.js';
+import { createItemDefinitions, placedItems } from './items.js';
+import { npcBlockedRemarks, npcDefinitions, npcProfileAssignments } from './npcs.js';
+import { terrain } from './terrain.js';
 import './styles.css';
-
-const TILE_SIZE = 32;
-const LOOP_MINUTES = 120;
-const POCKET_WATCH_BONUS_MINUTES = 30;
-const SIGHT_RADIUS = 100;
-const MAP_URLS = {
-  station: '/maps/station-loop.txt',
-  underground: '/maps/underground-room.txt',
-  officeReception: '/maps/office-reception.txt',
-  officeFloor1: '/maps/office-floor-1.txt',
-  officeFloor2: '/maps/office-floor-2.txt',
-  officeFloor3: '/maps/office-floor-3.txt',
-  officeFloor4: '/maps/office-floor-4.txt',
-};
-const RESET_EFFECT_MS = 900;
-const MAX_LOG_ENTRIES = 80;
-
-const npcBlockedRemarks = [
-  'Excuse me.',
-  'Move please.',
-  'Out of the way, if you do not mind.',
-  'Sorry, I need to get through.',
-  'Could you let me pass?',
-  'I am trying to catch the train.',
-  'Pardon me, coming through.',
-  'You are standing right where I need to be.',
-  'Mind your step, please.',
-  'Make way, please.',
-];
-
-const npcDefinitions = [
-  {
-    key: 'stationMaster',
-    name: 'Station Master',
-    description: 'The station master keeps one eye on the train and one hand on a heavy brass key.',
-    dialogue: [
-      'The station master says, “Rules are rules. That side room opens at half past and closes at minute seventy-five.”',
-      'The station master pats a brass key. “If you hear me lock it, do not linger below.”',
-      'The station master says, “Mind the stairs. They lead under more than the platform.”',
-      'The station master says, “Off the tracks at once! Timetables are difficult enough without trespassers.”',
-    ],
-    blockedRemarks: [
-      'The station master says, “Stand clear, please. I have a door to attend.”',
-      'The station master rattles the keyring. “Official business.”',
-    ],
-    routePreference: 'station master timed door',
-  },
-  {
-    key: 'commuter',
-    name: 'Mara Vale',
-    description: 'A commuter in a raincoat keeps checking the platform clock.',
-    dialogue: [
-      'Mara Vale says, “If I miss this train again, I am blaming the clock.”',
-      'Mara Vale says, “The same two hours, the same platform, the same late meeting.”',
-      'Mara Vale says, “Please let me through. The train doors never wait for me.”',
-    ],
-    blockedRemarks: [
-      'Mara Vale says, “Sorry, that train is mine.”',
-      'Mara Vale taps her ticket. “Platform, please.”',
-    ],
-    routePreference: 'commuter to train',
-  },
-  {
-    key: 'shopkeeper',
-    name: 'Oren Pike',
-    description: 'A shopkeeper with ink-stained fingers counts coins on the way to the kiosk.',
-    dialogue: [
-      'Oren Pike says, “The kiosk clock loses a minute whenever nobody watches it.”',
-      'Oren Pike says, “I keep restocking yesterday’s papers.”',
-      'Oren Pike says, “If you see my delivery, send it toward the shop.”',
-    ],
-    blockedRemarks: [
-      'Oren Pike says, “Mind the papers, please.”',
-      'Oren Pike says, “I need to get back to the counter.”',
-    ],
-    routePreference: 'shopkeeper to kiosk',
-  },
-  {
-    key: 'tourist',
-    name: 'Elsie Rowan',
-    description: 'A lost tourist circles the platform with an upside-down timetable.',
-    dialogue: [
-      'Elsie Rowan says, “Does this platform go to tomorrow, or only back to noon?”',
-      'Elsie Rowan says, “I have asked for directions three times. The answers keep changing.”',
-      'Elsie Rowan says, “I recognize that bench. I think it recognizes me too.”',
-    ],
-    blockedRemarks: [
-      'Elsie Rowan says, “Oh! Is this the way to the platform?”',
-      'Elsie Rowan studies her map. “I thought I had just passed here.”',
-    ],
-    routePreference: 'lost tourist pacing near platform',
-  },
-];
-
-const npcProfileAssignments = {
-  // Optional map-coordinate overrides. Format: 'x,y': 'profileKey'.
-  '64,8': 'shopkeeper',
-  '34,15': 'commuter',
-  '14,22': 'tourist',
-};
-
-const terrain = {
-  '#': { color: 0x38404d, blocks: true, description: 'A solid wall blocks the way.' },
-  '.': { color: 0x656b72, blocks: false, blocksView: false, description: 'Station paving.' },
-  '-': { color: 0x7f858c, blocks: false, blocksView: false, description: 'A raised platform edge running beside the track.' },
-  '=': { color: 0x20242a, blocks: false, blocksView: false, track: true, description: 'The train tracks hum with dangerous loop-energy. The station master will not approve.' },
-  'T': { color: 0x335f8f, blocks: false, blocksView: true, train: true, description: 'The waiting train. Step back aboard to end this loop.' },
-  'D': { color: 0x9b6a3c, blocks: false, blocksView: true, description: 'An open doorway blocks your line of sight, but you can pass through.' },
-  'W': { color: 0x4f6f8c, blocks: true, blocksView: false, description: 'A glass window blocks the way, but you can see through it.' },
-  '~': { color: 0x317345, blocks: false, description: 'A patch of grass.' },
-  'B': { color: 0x80613a, blocks: false, interact: 'You sit for a minute and watch the station repeat itself.', description: 'A station bench.' },
-  'C': { color: 0x8d99ae, blocks: true, blocksView: false, description: 'A parked car.' },
-  'S': { color: 0xc084fc, blocks: true, blocksView: false, interact: 'The shop window is full of headlines you swear you have already read.', description: 'A small shop.' },
-  'K': { color: 0xf6c453, blocks: true, blocksView: false, interact: 'The kiosk clock ticks forward exactly one minute.', description: 'A kiosk.' },
-  'A': { color: 0x2dd4bf, blocks: true, blocksView: false, interact: 'The board flips through destinations you remember from previous loops.', description: 'An announcement board listing departures and impossible delays.' },
-  'L': { color: 0xfff3a3, blocks: true, blocksView: false, interact: 'The lamp hums warmly, then flickers in a rhythm you almost recognize.', description: 'A platform lamp casting a steady pool of light.' },
-  'V': { color: 0xef4444, blocks: true, blocksView: false, interact: 'The vending machine offers the same snack from three different hours.', description: 'A humming vending machine.' },
-  'G': { color: 0x9b6a3c, blocks: true, blocksView: false, interact: 'The luggage tag is addressed to a date that has not happened yet.', description: 'A stack of unattended luggage.' },
-  'R': { color: 0x64748b, blocks: true, blocksView: false, interact: 'The ticket barrier rejects your ticket, then stamps tomorrow on it.', description: 'A closed ticket barrier.' },
-  'O': { color: 0xf8fafc, blocks: true, blocksView: false, interact: 'The station clock ticks once, but every hand points toward departure.', description: 'A round station clock.' },
-  'N': { color: 0xff8a65, blocks: true, blocksView: false, npc: true, interact: 'They mutter about catching the same train again.', description: 'A townsperson.' },
-  'M': { color: 0x38bdf8, blocks: true, blocksView: false, npc: true, interact: 'The station master checks a brass key and the platform clock.', description: 'The station master.' },
-  'X': { color: 0x5b3418, blocks: true, blocksView: true, lockedDoor: true, interact: 'The station side-room door is locked tight.', description: 'A locked station side-room door.' },
-  'U': { color: 0xa78bfa, blocks: false, blocksView: false, stairs: true, description: 'A narrow stairwell descends beneath the station.' },
-  '^': { color: 0x22c55e, blocks: false, blocksView: false, stairsUp: true, description: 'Stairs marked with an upward arrow.' },
-  'v': { color: 0xf97316, blocks: false, blocksView: false, stairsDown: true, description: 'Stairs marked with a downward arrow.' },
-  'E': { color: 0x475569, blocks: false, blocksView: true, officeEntrance: true, description: 'The glass entrance to an office block.' },
-  'Q': { color: 0x475569, blocks: false, blocksView: true, officeExit: true, description: 'The office block exit back to the station district.' },
-  'r': { color: 0x8b5cf6, blocks: true, blocksView: false, interact: 'The reception desk has a visitor book filled with today repeated line after line.', description: 'A reception desk for the office block.' },
-  'o': { color: 0x94a3b8, blocks: true, blocksView: false, interact: 'The desk is covered in coffee rings, memos, and a calendar stuck on this date.', description: 'An office desk.' },
-  'p': { color: 0x16a34a, blocks: true, blocksView: false, interact: 'The plant seems healthier each time the loop starts over.', description: 'A potted office plant.' },
-  'P': { color: 0x656b72, blocks: false, start: true, description: 'Your starting point on the platform.' },
-  ' ': { color: 0x111111, blocks: true, description: 'An unmapped void.' },
-};
-
-const directions = {
-  ArrowUp: [0, -1], KeyW: [0, -1],
-  ArrowDown: [0, 1], KeyS: [0, 1],
-  ArrowLeft: [-1, 0], KeyA: [-1, 0],
-  ArrowRight: [1, 0], KeyD: [1, 0],
-};
 
 const app = new Application();
 const world = new Container();
@@ -155,89 +19,8 @@ let state;
 let loopCount = 0;
 let resetEffectTimeout;
 
-const itemDefinitions = {
-  pocketWatch: {
-    name: 'Pocket watch',
-    description: 'A brass watch wound against the loop. Use it to add 30 minutes to this loop.',
-    color: 0xf6c453,
-    effect: ({ item }) => {
-      state.minutesLeft += POCKET_WATCH_BONUS_MINUTES;
-      state.loopLimit += POCKET_WATCH_BONUS_MINUTES;
-      writeLog(`${item.name} clicks open. The loop stretches by ${POCKET_WATCH_BONUS_MINUTES} minutes.`);
-      draw();
-    },
-  },
-};
-
-const placedItems = [
-  { id: 'pocket-watch', type: 'pocketWatch', mapKey: 'station', x: 23, y: 27 },
-];
-
-const scheduledEvents = [
-  {
-    id: 'station-announcement',
-    triggerMinute: 5,
-    oncePerLoop: true,
-    effect: () => {
-      writeLog('The platform speakers crackle: “Five minutes gone. Please keep your belongings inside this timeline.”');
-    },
-  },
-  {
-    id: 'kiosk-bell',
-    triggerMinute: 15,
-    oncePerLoop: true,
-    effect: () => {
-      updateTerrain('K', {
-        interact: 'The kiosk bell gives one bright ring, then the clock hand jumps backward.',
-        description: 'A kiosk with a freshly ringing bell and a suspiciously confident clock.',
-      });
-      moveItem('pocket-watch', { x: 58, y: 15 });
-      writeLog('A kiosk bell rings somewhere down the concourse. Something small skitters across the paving.');
-    },
-  },
-  {
-    id: 'shop-sign-change',
-    triggerMinute: 30,
-    oncePerLoop: true,
-    effect: () => {
-      updateTerrain('S', {
-        interact: 'The shop sign now reads “BACK IN FIVE MINUTES,” but the five never shrinks.',
-        description: 'A small shop with a hand-painted sign promising to return in five impossible minutes.',
-      });
-      writeLog('Every shop sign flips at once: “BACK IN FIVE MINUTES.”');
-    },
-  },
-
-  {
-    id: 'station-master-unlock-door',
-    triggerMinute: 30,
-    oncePerLoop: true,
-    effect: () => {
-      queueStationMasterDoorAction('open');
-      writeLog('The station master checks the platform clock and starts toward the side-room door.');
-    },
-  },
-  {
-    id: 'station-master-lock-door',
-    triggerMinute: 75,
-    oncePerLoop: true,
-    effect: () => {
-      queueStationMasterDoorAction('close');
-      writeLog('The station master turns back toward the side-room door with the brass key ready.');
-    },
-  },
-  {
-    id: 'train-final-warning',
-    triggerMinute: ({ loopLimit }) => loopLimit - 10,
-    oncePerLoop: true,
-    effect: () => {
-      updateTerrain('T', {
-        description: 'The waiting train shudders with final-loop static. Boarding now will end this loop.',
-      });
-      writeLog('The train horn blares twice. Ten minutes remain before the loop collapses.');
-    },
-  },
-];
+const itemDefinitions = createItemDefinitions({ addLoopMinutes, writeLog, draw });
+const scheduledEvents = createScheduledEvents({ updateTerrain, moveItem, writeLog, queueStationMasterDoorAction });
 
 await app.init({ background: '#000000', resizeTo: document.querySelector('#game'), antialias: false });
 document.querySelector('#game').appendChild(app.canvas);
@@ -457,6 +240,11 @@ function movePlayerToMapStairs(mapKey, stairType) {
   map = maps[mapKey];
   const destination = map.stairs.find((stair) => stair.type === stairType) ?? map.stairs[0] ?? map.start;
   state.player = { x: destination.x, y: destination.y };
+}
+
+function addLoopMinutes(minutes) {
+  state.minutesLeft += minutes;
+  state.loopLimit += minutes;
 }
 
 function updateTerrain(tileType, changes) {
