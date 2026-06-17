@@ -132,6 +132,53 @@ const placedItems = [
   { id: 'pocket-watch', type: 'pocketWatch', x: 23, y: 27 },
 ];
 
+const scheduledEvents = [
+  {
+    id: 'station-announcement',
+    triggerMinute: 5,
+    oncePerLoop: true,
+    effect: () => {
+      writeLog('The platform speakers crackle: “Five minutes gone. Please keep your belongings inside this timeline.”');
+    },
+  },
+  {
+    id: 'kiosk-bell',
+    triggerMinute: 15,
+    oncePerLoop: true,
+    effect: () => {
+      updateTerrain('K', {
+        interact: 'The kiosk bell gives one bright ring, then the clock hand jumps backward.',
+        description: 'A kiosk with a freshly ringing bell and a suspiciously confident clock.',
+      });
+      moveItem('pocket-watch', { x: 58, y: 15 });
+      writeLog('A kiosk bell rings somewhere down the concourse. Something small skitters across the paving.');
+    },
+  },
+  {
+    id: 'shop-sign-change',
+    triggerMinute: 30,
+    oncePerLoop: true,
+    effect: () => {
+      updateTerrain('S', {
+        interact: 'The shop sign now reads “BACK IN FIVE MINUTES,” but the five never shrinks.',
+        description: 'A small shop with a hand-painted sign promising to return in five impossible minutes.',
+      });
+      writeLog('Every shop sign flips at once: “BACK IN FIVE MINUTES.”');
+    },
+  },
+  {
+    id: 'train-final-warning',
+    triggerMinute: ({ loopLimit }) => loopLimit - 10,
+    oncePerLoop: true,
+    effect: () => {
+      updateTerrain('T', {
+        description: 'The waiting train shudders with final-loop static. Boarding now will end this loop.',
+      });
+      writeLog('The train horn blares twice. Ten minutes remain before the loop collapses.');
+    },
+  },
+];
+
 await app.init({ background: '#000000', resizeTo: document.querySelector('#game'), antialias: false });
 document.querySelector('#game').appendChild(app.canvas);
 app.stage.addChild(world);
@@ -173,6 +220,8 @@ function resetLoop(message, { effect = true } = {}) {
     loopLimit: LOOP_MINUTES,
     inventory: [],
     items: placedItems.map((item) => ({ ...item })),
+    terrainOverrides: {},
+    triggeredEventIds: new Set(),
     facing: [0, 1],
     seen: new Set(),
     npcs: map.npcs.map(createNpcState),
@@ -229,10 +278,30 @@ function interact() {
 
 function spendMinute(message) {
   state.minutesLeft -= 1;
+  runScheduledEvents();
   moveNpcs();
   if (state.minutesLeft <= 0) return resetLoop('The two-hour loop expires. Everything snaps back to the moment you arrived.');
   draw();
   if (message) writeLog(message);
+}
+
+function runScheduledEvents() {
+  const currentMinute = elapsedMinutes();
+  scheduledEvents.forEach((event) => {
+    if (event.oncePerLoop && state.triggeredEventIds.has(event.id)) return;
+    const triggerMinute = typeof event.triggerMinute === 'function' ? event.triggerMinute(state) : event.triggerMinute;
+    if (currentMinute < triggerMinute) return;
+    state.triggeredEventIds.add(event.id);
+    event.effect();
+  });
+}
+
+function updateTerrain(tileType, changes) {
+  state.terrainOverrides[tileType] = { ...(state.terrainOverrides[tileType] ?? {}), ...changes };
+}
+
+function moveItem(itemId, position) {
+  state.items = state.items.map((item) => (item.id === itemId ? { ...item, ...position } : item));
 }
 
 function moveNpcs() {
@@ -584,7 +653,9 @@ function blocksView(x, y) {
 }
 
 function tileAt(x, y) {
-  return terrain[map.grid[y]?.[x]] ?? terrain[' '];
+  const tileType = map.grid[y]?.[x];
+  const baseTile = terrain[tileType] ?? terrain[' '];
+  return { ...baseTile, ...(state?.terrainOverrides[tileType] ?? {}) };
 }
 
 function npcAt(x, y) {
