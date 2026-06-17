@@ -290,8 +290,8 @@ function draw() {
       drawTile(x, y, visible.has(`${x},${y}`));
     }
   }
-  state.npcs.forEach((npc) => drawSquare(npc.x, npc.y, 0xff8a65, visible.has(`${npc.x},${npc.y}`)));
-  drawSquare(state.player.x, state.player.y, 0x61dafb, true);
+  state.npcs.forEach((npc) => drawSprite(npc.x, npc.y, 'N', visible.has(`${npc.x},${npc.y}`)));
+  drawSprite(state.player.x, state.player.y, 'player', true);
   world.x = Math.round(app.screen.width / 2 - (state.player.x + 0.5) * TILE_SIZE);
   world.y = Math.round(app.screen.height / 2 - (state.player.y + 0.5) * TILE_SIZE);
   hud.textContent = `Loop ${loopCount} · Minute ${elapsedMinutes()} / ${LOOP_MINUTES} · ${state.minutesLeft} min left`;
@@ -299,15 +299,99 @@ function draw() {
 
 function drawTile(x, y, isVisible) {
   const remembered = state.seen.has(`${x},${y}`);
-  if (!isVisible && !remembered) return drawSquare(x, y, 0x000000, true);
-  drawSquare(x, y, tileAt(x, y).color, isVisible, remembered && !isVisible);
+  if (!isVisible && !remembered) return drawSprite(x, y, 'unknown', true);
+  drawSprite(x, y, map.grid[y][x], isVisible, remembered && !isVisible);
 }
 
-function drawSquare(x, y, color, visible, desaturated = false) {
+function drawSprite(x, y, sprite, visible, desaturated = false) {
   const g = new Graphics();
-  const finalColor = desaturated ? desaturate(color) : color;
-  g.rect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE - 1, TILE_SIZE - 1).fill(visible ? finalColor : 0x000000);
+  const tone = (color) => (desaturated ? desaturate(color) : color);
+  const fill = (color) => (visible ? tone(color) : 0x000000);
+  const px = x * TILE_SIZE;
+  const py = y * TILE_SIZE;
+  const inset = 3;
+
+  g.rect(px, py, TILE_SIZE - 1, TILE_SIZE - 1).fill(fill(baseColorFor(sprite)));
+  if (!visible) {
+    world.addChild(g);
+    return;
+  }
+
+  switch (sprite) {
+    case '#':
+      g.rect(px + 2, py + 2, 12, 6).fill(tone(0x4d5868));
+      g.rect(px + 17, py + 2, 13, 6).fill(tone(0x4d5868));
+      g.rect(px + 5, py + 12, 20, 5).fill(tone(0x2a303a));
+      g.rect(px + 2, py + 22, 12, 6).fill(tone(0x4d5868));
+      g.rect(px + 17, py + 22, 13, 6).fill(tone(0x4d5868));
+      break;
+    case '.':
+    case 'P':
+      g.circle(px + 8, py + 8, 1.5).fill(tone(0x7b8189));
+      g.circle(px + 23, py + 19, 1.5).fill(tone(0x7b8189));
+      break;
+    case '=':
+      g.rect(px + 5, py, 5, TILE_SIZE - 1).fill(tone(0x0f1115));
+      g.rect(px + 22, py, 5, TILE_SIZE - 1).fill(tone(0x0f1115));
+      g.rect(px + 2, py + 6, 28, 4).fill(tone(0x656b72));
+      g.rect(px + 2, py + 22, 28, 4).fill(tone(0x656b72));
+      break;
+    case 'T':
+      g.roundRect(px + inset, py + 4, TILE_SIZE - inset * 2, TILE_SIZE - 8, 4).fill(tone(0x335f8f));
+      g.rect(px + 8, py + 8, 16, 8).fill(tone(0x9bd7ff));
+      g.rect(px + 15, py + 18, 2, 10).fill(tone(0xf6c453));
+      break;
+    case 'D':
+      g.rect(px + 6, py + 4, 20, 24).fill(tone(0x6f4724));
+      g.circle(px + 21, py + 16, 2).fill(tone(0xf6c453));
+      break;
+    case '~':
+      g.moveTo(px + 5, py + 25).quadraticCurveTo(px + 9, py + 6, px + 13, py + 25).fill(tone(0x55a85e));
+      g.moveTo(px + 14, py + 25).quadraticCurveTo(px + 18, py + 8, px + 23, py + 25).fill(tone(0x6ec56f));
+      break;
+    case 'B':
+      g.rect(px + 5, py + 10, 22, 5).fill(tone(0xb4814d));
+      g.rect(px + 5, py + 18, 22, 5).fill(tone(0xb4814d));
+      g.rect(px + 8, py + 23, 3, 6).fill(tone(0x4b3522));
+      g.rect(px + 21, py + 23, 3, 6).fill(tone(0x4b3522));
+      break;
+    case 'C':
+      g.roundRect(px + 4, py + 9, 24, 14, 4).fill(tone(0xa5adbb));
+      g.rect(px + 10, py + 5, 12, 7).fill(tone(0x79d2ff));
+      g.circle(px + 10, py + 24, 3).fill(tone(0x15181f));
+      g.circle(px + 23, py + 24, 3).fill(tone(0x15181f));
+      break;
+    case 'S':
+      g.rect(px + 5, py + 7, 22, 18).fill(tone(0xa855f7));
+      g.rect(px + 7, py + 9, 18, 6).fill(tone(0xe8dcff));
+      g.rect(px + 13, py + 17, 6, 8).fill(tone(0x5b2b82));
+      break;
+    case 'K':
+      g.rect(px + 7, py + 8, 18, 18).fill(tone(0xf6c453));
+      g.rect(px + 5, py + 5, 22, 5).fill(tone(0xd97706));
+      g.circle(px + 16, py + 17, 5).fill(tone(0xfff5cc));
+      g.moveTo(px + 16, py + 17).lineTo(px + 16, py + 13).lineTo(px + 19, py + 17).stroke({ color: tone(0x20242a), width: 1.5 });
+      break;
+    case 'N':
+    case 'player':
+      g.circle(px + 16, py + 9, 5).fill(tone(sprite === 'player' ? 0x61dafb : 0xffc0a8));
+      g.roundRect(px + 10, py + 15, 12, 11, 3).fill(tone(sprite === 'player' ? 0x1d8fb8 : 0xff8a65));
+      g.rect(px + 8, py + 26, 6, 4).fill(tone(0x20242a));
+      g.rect(px + 18, py + 26, 6, 4).fill(tone(0x20242a));
+      break;
+    case 'unknown':
+      break;
+    default:
+      g.rect(px + inset, py + inset, TILE_SIZE - inset * 2, TILE_SIZE - inset * 2).fill(fill(tileAt(x, y).color));
+  }
+
   world.addChild(g);
+}
+
+function baseColorFor(sprite) {
+  if (sprite === 'unknown') return 0x000000;
+  if (sprite === 'player') return 0x264757;
+  return terrain[sprite]?.color ?? 0x000000;
 }
 
 function visibleTiles() {
