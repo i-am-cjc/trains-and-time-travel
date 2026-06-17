@@ -251,7 +251,12 @@ resetLoop('The doors hiss open. You step onto the platform with two hours before
 
 window.addEventListener('keydown', (event) => {
   if (inspectMode) return;
-  if (event.code === 'Space' || event.code === 'KeyE') {
+  if (event.code === 'Space') {
+    event.preventDefault();
+    spendMinute();
+    return;
+  }
+  if (event.code === 'KeyE') {
     event.preventDefault();
     interact();
     return;
@@ -264,7 +269,7 @@ window.addEventListener('keydown', (event) => {
 inspectButton.addEventListener('click', () => {
   inspectMode = !inspectMode;
   inspectButton.classList.toggle('active', inspectMode);
-  inspectStatus.textContent = inspectMode ? 'Click any visible or remembered square for a description.' : 'Use arrow keys or WASD to move.';
+  inspectStatus.textContent = inspectMode ? 'Click any visible or remembered square for a description.' : 'Use arrow keys or WASD to move, E to interact, Space to wait.';
 });
 
 app.canvas.addEventListener('click', (event) => {
