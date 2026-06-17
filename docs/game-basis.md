@@ -35,6 +35,7 @@ Legend:
 | --- | --- |
 | `#` | Wall |
 | `.` | Floor or path |
+| `-` | Platform edge tile that runs beside the track |
 | `=` | Train line; blocks the top of the map |
 | `T` | Train tile; stepping on it ends the loop |
 | `P` | Player start |
@@ -43,6 +44,12 @@ Legend:
 | `N` | Townsperson |
 | `B` | Bench |
 | `K` | Kiosk |
+| `A` | Announcement board |
+| `L` | Lamp |
+| `V` | Vending machine |
+| `G` | Luggage |
+| `R` | Ticket barrier |
+| `O` | Station clock |
 | `~` | Grass |
 | `D` | Doorway |
 
