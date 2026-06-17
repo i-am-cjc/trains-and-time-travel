@@ -1,7 +1,7 @@
 import { Application, Container, Graphics } from 'pixi.js';
 import './styles.css';
 
-const TILE_SIZE = 16;
+const TILE_SIZE = 20;
 const LOOP_MINUTES = 60;
 const SIGHT_RADIUS = 8;
 const MAP_URL = '/maps/station-loop.txt';
@@ -14,10 +14,10 @@ const terrain = {
   'D': { color: 0x9b6a3c, blocks: false, description: 'An open doorway.' },
   '~': { color: 0x317345, blocks: false, description: 'A patch of grass.' },
   'B': { color: 0x80613a, blocks: false, interact: 'You sit for a minute and watch the station repeat itself.', description: 'A station bench.' },
-  'C': { color: 0x8d99ae, blocks: true, description: 'A parked car.' },
-  'S': { color: 0xc084fc, blocks: true, interact: 'The shop window is full of headlines you swear you have already read.', description: 'A small shop.' },
-  'K': { color: 0xf6c453, blocks: true, interact: 'The kiosk clock ticks forward exactly one minute.', description: 'A kiosk.' },
-  'N': { color: 0xff8a65, blocks: true, npc: true, interact: 'They mutter about catching the same train again.', description: 'A townsperson.' },
+  'C': { color: 0x8d99ae, blocks: true, blocksView: false, description: 'A parked car.' },
+  'S': { color: 0xc084fc, blocks: true, blocksView: false, interact: 'The shop window is full of headlines you swear you have already read.', description: 'A small shop.' },
+  'K': { color: 0xf6c453, blocks: true, blocksView: false, interact: 'The kiosk clock ticks forward exactly one minute.', description: 'A kiosk.' },
+  'N': { color: 0xff8a65, blocks: true, blocksView: false, npc: true, interact: 'They mutter about catching the same train again.', description: 'A townsperson.' },
   'P': { color: 0x656b72, blocks: false, start: true, description: 'Your starting point on the platform.' },
   ' ': { color: 0x111111, blocks: true, description: 'An unmapped void.' },
 };
@@ -187,7 +187,7 @@ function lineClear(x0, y0, x1, y1) {
   let err = dx - dy, x = x0, y = y0;
   while (true) {
     if (x === x1 && y === y1) return true;
-    if (!(x === x0 && y === y0) && tileAt(x, y).blocks) return false;
+    if (!(x === x0 && y === y0) && blocksView(x, y)) return false;
     const e2 = 2 * err;
     if (e2 > -dy) { err -= dy; x += sx; }
     if (e2 < dx) { err += dx; y += sy; }
@@ -198,6 +198,11 @@ function describeTile(x, y) {
   if (!state.seen.has(`${x},${y}`) && !visibleTiles().has(`${x},${y}`)) return writeLog('You know nothing about that square yet.');
   const npc = npcAt(x, y);
   writeLog(npc ? terrain.N.description : tileAt(x, y).description);
+}
+
+function blocksView(x, y) {
+  const tile = tileAt(x, y);
+  return tile.blocksView ?? tile.blocks;
 }
 
 function tileAt(x, y) {
