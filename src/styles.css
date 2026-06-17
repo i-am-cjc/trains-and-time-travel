@@ -83,3 +83,71 @@ canvas {
   right: 1rem;
   z-index: 1;
 }
+
+#loop-effect {
+  background:
+    repeating-linear-gradient(90deg, rgba(121, 210, 255, 0.22) 0 0.35rem, transparent 0.35rem 0.7rem),
+    radial-gradient(circle at center, rgba(246, 196, 83, 0.34), rgba(192, 132, 252, 0.22) 35%, transparent 68%);
+  inset: 0;
+  mix-blend-mode: screen;
+  opacity: 0;
+  pointer-events: none;
+  position: fixed;
+  transform: scale(1);
+  z-index: 2;
+}
+
+#loop-effect.active {
+  animation: loop-reset-warp 900ms ease-out;
+}
+
+#log {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  max-height: 8.5rem;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: #79d2ff rgba(11, 13, 17, 0.55);
+}
+
+#log p {
+  line-height: 1.25;
+  margin: 0;
+}
+
+#log time {
+  color: #f6c453;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+@keyframes loop-reset-warp {
+  0% {
+    filter: hue-rotate(0deg) contrast(1);
+    opacity: 0;
+    transform: scale(1) rotate(0deg);
+  }
+
+  18% {
+    opacity: 0.95;
+    transform: scale(1.04) rotate(0.5deg) skewX(4deg);
+  }
+
+  42% {
+    filter: hue-rotate(180deg) contrast(1.8);
+    opacity: 0.72;
+    transform: scale(0.98) rotate(-0.7deg) skewX(-6deg);
+  }
+
+  72% {
+    opacity: 0.48;
+    transform: scale(1.08) rotate(0.35deg) skewX(2deg);
+  }
+
+  100% {
+    filter: hue-rotate(360deg) contrast(1);
+    opacity: 0;
+    transform: scale(1.14) rotate(0deg) skewX(0deg);
+  }
+}

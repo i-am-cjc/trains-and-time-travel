@@ -5,12 +5,14 @@ const TILE_SIZE = 20;
 const LOOP_MINUTES = 60;
 const SIGHT_RADIUS = 8;
 const MAP_URL = '/maps/station-loop.txt';
+const RESET_EFFECT_MS = 900;
+const MAX_LOG_ENTRIES = 80;
 
 const terrain = {
   '#': { color: 0x38404d, blocks: true, description: 'A solid wall blocks the way.' },
   '.': { color: 0x656b72, blocks: false, description: 'Station paving.' },
   '=': { color: 0x20242a, blocks: true, description: 'The train line blocks the northern edge of town.' },
-  'T': { color: 0x335f8f, blocks: false, train: true, description: 'The waiting train. Step back aboard to end this loop.' },
+  'T': { color: 0x335f8f, blocks: false, blocksView: true, train: true, description: 'The waiting train. Step back aboard to end this loop.' },
   'D': { color: 0x9b6a3c, blocks: false, description: 'An open doorway.' },
   '~': { color: 0x317345, blocks: false, description: 'A patch of grass.' },
   'B': { color: 0x80613a, blocks: false, interact: 'You sit for a minute and watch the station repeat itself.', description: 'A station bench.' },
@@ -35,15 +37,18 @@ const hud = document.querySelector('#hud');
 const log = document.querySelector('#log');
 const inspectButton = document.querySelector('#inspect-button');
 const inspectStatus = document.querySelector('#inspect-status');
+const loopEffect = document.querySelector('#loop-effect');
 let inspectMode = false;
 let state;
+let loopCount = 0;
+let resetEffectTimeout;
 
 await app.init({ background: '#000000', resizeTo: document.querySelector('#game'), antialias: false });
 document.querySelector('#game').appendChild(app.canvas);
 app.stage.addChild(world);
 
 const map = await loadMap(MAP_URL);
-resetLoop('The doors hiss open. You step onto the platform with one hour before everything resets.');
+resetLoop('The doors hiss open. You step onto the platform with one hour before everything resets.', { effect: false });
 
 window.addEventListener('keydown', (event) => {
   if (inspectMode) return;
@@ -71,7 +76,8 @@ app.canvas.addEventListener('click', (event) => {
   describeTile(x, y);
 });
 
-function resetLoop(message) {
+function resetLoop(message, { effect = true } = {}) {
+  loopCount += 1;
   state = {
     player: { ...map.start },
     minutesLeft: LOOP_MINUTES,
@@ -79,6 +85,7 @@ function resetLoop(message) {
     seen: new Set(),
     npcs: map.npcs.map((npc) => ({ ...npc, phase: 0 })),
   };
+  if (effect) playResetEffect();
   draw();
   writeLog(message);
 }
@@ -155,7 +162,7 @@ function draw() {
   drawSquare(state.player.x, state.player.y, 0x61dafb, true);
   world.x = Math.round(app.screen.width / 2 - (state.player.x + 0.5) * TILE_SIZE);
   world.y = Math.round(app.screen.height / 2 - (state.player.y + 0.5) * TILE_SIZE);
-  hud.textContent = `Minutes left: ${state.minutesLeft} / ${LOOP_MINUTES}`;
+  hud.textContent = `Loop ${loopCount} · Minute ${elapsedMinutes()} / ${LOOP_MINUTES} · ${state.minutesLeft} min left`;
 }
 
 function drawTile(x, y, isVisible) {
@@ -214,7 +221,25 @@ function npcAt(x, y) {
 }
 
 function writeLog(message) {
-  log.textContent = message;
+  const entry = document.createElement('p');
+  const timestamp = document.createElement('time');
+  timestamp.textContent = `[Loop ${loopCount}, minute ${elapsedMinutes()}]`;
+  entry.append(timestamp, ` ${message}`);
+  log.appendChild(entry);
+  while (log.children.length > MAX_LOG_ENTRIES) log.firstElementChild.remove();
+  log.scrollTop = log.scrollHeight;
+}
+
+function elapsedMinutes() {
+  return LOOP_MINUTES - state.minutesLeft;
+}
+
+function playResetEffect() {
+  clearTimeout(resetEffectTimeout);
+  loopEffect.classList.remove('active');
+  void loopEffect.offsetWidth;
+  loopEffect.classList.add('active');
+  resetEffectTimeout = setTimeout(() => loopEffect.classList.remove('active'), RESET_EFFECT_MS);
 }
 
 function desaturate(color) {
