@@ -22,8 +22,8 @@ const bloodStains = new Set();
 const CAR_SPAWN_MINUTES = 10;
 const CAR_SPAWN_MAX_MINUTES = 15;
 const carSpawnPoints = [
-  { key: 'left', x: -1, y: 37, dx: 1, sprite: 'carRight', initialDelay: 0 },
-  { key: 'right', x: 80, y: 38, dx: -1, sprite: 'carLeft', initialDelay: 2 },
+  { key: 'left', y: 30, dx: 1, sprite: 'carRight', initialDelay: 0 },
+  { key: 'right', y: 31, dx: -1, sprite: 'carLeft', initialDelay: 2 },
 ];
 
 const itemDefinitions = createItemDefinitions({ addLoopMinutes, writeLog, draw });
@@ -174,12 +174,16 @@ function spawnCar(spawn) {
   state.cars.push({
     id: `car-${state.nextCarId}`,
     mapKey: 'station',
-    x: spawn.x,
+    x: carSpawnX(spawn),
     y: spawn.y,
     dx: spawn.dx,
     sprite: spawn.sprite,
   });
   state.nextCarId += 1;
+}
+
+function carSpawnX(spawn) {
+  return spawn.dx > 0 ? 0 : maps.station.width - 1;
 }
 
 function nextCarSpawnDelay() {
@@ -190,7 +194,7 @@ function moveCars() {
   updateCarSpawns();
   state.cars = state.cars
     .map((car) => ({ ...car, x: car.x + car.dx }))
-    .filter((car) => car.x >= -1 && car.x <= maps.station.width);
+    .filter((car) => car.x >= 0 && car.x < maps.station.width);
 
   if (state.currentMapKey !== 'station') return false;
   const hitCar = carAt(state.player.x, state.player.y);
