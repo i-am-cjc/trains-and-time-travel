@@ -148,6 +148,7 @@ function tryMove(dx, dy) {
     return;
   }
   state.player = target;
+  closeReadableOverlay();
   if (tile.track) alertStationMasterToTrackTrespass();
   if (tile.stairs || tile.stairsUp || tile.stairsDown || tile.officeEntrance || tile.officeExit) useStairs(tile);
   const item = itemAt(target.x, target.y);
@@ -989,6 +990,10 @@ function renderInventory() {
     button.append(name, description);
     inventoryList.appendChild(button);
   });
+}
+
+function closeReadableOverlay() {
+  if (readableOverlay.open) readableOverlay.close();
 }
 
 function showReadableOverlay(tile) {
