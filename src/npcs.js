@@ -28,6 +28,22 @@ export const npcDefinitions = [
     ],
     routePreference: 'station master timed door',
   },
+
+  {
+    key: 'police',
+    name: 'Police Officer',
+    description: 'A uniformed police officer waits near the station, watching for trouble.',
+    dialogue: [
+      'The police officer says, “Keep moving and stay out of trouble.”',
+      'The police officer says, “We are stationed here for everyone’s safety.”',
+      'The police officer watches the platform crowd without blinking.',
+    ],
+    blockedRemarks: [
+      'The police officer says, “Step aside.”',
+      'The police officer says, “Official business.”',
+    ],
+    routePreference: 'police station patrol',
+  },
   {
     key: 'commuter',
     name: 'Mara Vale',
@@ -80,6 +96,8 @@ export const npcProfileAssignments = {
   '64,8': 'shopkeeper',
   '34,15': 'commuter',
   '14,22': 'tourist',
+  '50,7': 'police',
+  '56,7': 'police',
 };
 
 export { npcBlockedRemarks };
