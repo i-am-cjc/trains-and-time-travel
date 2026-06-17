@@ -8,6 +8,19 @@ const MAP_URL = '/maps/station-loop.txt';
 const RESET_EFFECT_MS = 900;
 const MAX_LOG_ENTRIES = 80;
 
+const npcBlockedRemarks = [
+  'Excuse me.',
+  'Move please.',
+  'Out of the way, if you do not mind.',
+  'Sorry, I need to get through.',
+  'Could you let me pass?',
+  'I am trying to catch the train.',
+  'Pardon me, coming through.',
+  'You are standing right where I need to be.',
+  'Mind your step, please.',
+  'Make way, please.',
+];
+
 const terrain = {
   '#': { color: 0x38404d, blocks: true, description: 'A solid wall blocks the way.' },
   '.': { color: 0x656b72, blocks: false, description: 'Station paving.' },
@@ -83,7 +96,7 @@ function resetLoop(message, { effect = true } = {}) {
     minutesLeft: LOOP_MINUTES,
     facing: [0, 1],
     seen: new Set(),
-    npcs: map.npcs.map((npc) => ({ ...npc, phase: 0 })),
+    npcs: map.npcs.map(createNpcState),
   };
   if (effect) playResetEffect();
   draw();
@@ -99,7 +112,10 @@ async function loadMap(url) {
   let start = { x: 1, y: 1 };
   grid.forEach((row, y) => row.forEach((cell, x) => {
     if (cell === 'P') start = { x, y };
-    if (cell === 'N') npcs.push({ x, y });
+    if (cell === 'N') {
+      npcs.push({ x, y });
+      grid[y][x] = '.';
+    }
   }));
   return { grid, height: grid.length, width, start, npcs };
 }
@@ -138,15 +154,131 @@ function spendMinute(message) {
 }
 
 function moveNpcs() {
-  const pattern = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+  const occupied = new Set(state.npcs.map((npc) => positionKey(npc.x, npc.y)));
+  const remarks = [];
+
   state.npcs = state.npcs.map((npc) => {
-    const [dx, dy] = pattern[npc.phase % pattern.length];
-    const next = { x: npc.x + dx, y: npc.y + dy, phase: npc.phase + 1 };
-    if (tileAt(next.x, next.y).blocks || (next.x === state.player.x && next.y === state.player.y)) {
-      return { ...npc, phase: npc.phase + 1 };
+    let traveler = npc;
+    if (traveler.x === traveler.target.x && traveler.y === traveler.target.y) {
+      traveler = chooseNextNpcTarget(traveler);
     }
-    return next;
+
+    const step = nextStepToward(traveler, occupied);
+    if (!step) return traveler;
+
+    if (step.x === state.player.x && step.y === state.player.y) {
+      remarks.push(randomItem(npcBlockedRemarks));
+      return traveler;
+    }
+
+    const stepKey = positionKey(step.x, step.y);
+    if (occupied.has(stepKey) || tileAt(step.x, step.y).blocks) return traveler;
+
+    occupied.delete(positionKey(traveler.x, traveler.y));
+    occupied.add(stepKey);
+    return { ...traveler, x: step.x, y: step.y };
   });
+
+  remarks.forEach((remark) => writeLog(remark));
+}
+
+function createNpcState(npc, index) {
+  const route = createNpcRoute(npc, index);
+  return { ...npc, route, target: route[1] };
+}
+
+function createNpcRoute(npc, index) {
+  const trainStops = walkableTiles().filter((point) => tileAt(point.x, point.y).train);
+  const shopStops = pointsAdjacentTo('S');
+  const walkStops = walkableTiles().filter((point) => !tileAt(point.x, point.y).train);
+  const start = { x: npc.x, y: npc.y };
+
+  if (index % 3 === 0 && trainStops.length && shopStops.length) return [randomItem(trainStops), randomItem(shopStops)];
+  if (index % 3 === 1 && trainStops.length) return [randomItem(walkStops), randomItem(trainStops)];
+  return [start, randomItem(walkStops)];
+}
+
+function chooseNextNpcTarget(npc) {
+  const currentTargetIndex = npc.route.findIndex((point) => point.x === npc.target.x && point.y === npc.target.y);
+  const nextTarget = npc.route[currentTargetIndex === 0 ? 1 : 0];
+  return { ...npc, target: nextTarget };
+}
+
+function nextStepToward(npc, occupied) {
+  const startKey = positionKey(npc.x, npc.y);
+  const targetKey = positionKey(npc.target.x, npc.target.y);
+  const queue = [{ x: npc.x, y: npc.y }];
+  const cameFrom = new Map([[startKey, null]]);
+
+  for (let cursor = 0; cursor < queue.length; cursor += 1) {
+    const current = queue[cursor];
+    if (positionKey(current.x, current.y) === targetKey) break;
+
+    neighborsOf(current).forEach((neighbor) => {
+      const key = positionKey(neighbor.x, neighbor.y);
+      if (cameFrom.has(key) || tileAt(neighbor.x, neighbor.y).blocks) return;
+      if (occupied.has(key) && key !== targetKey) return;
+      cameFrom.set(key, current);
+      queue.push(neighbor);
+    });
+  }
+
+  if (!cameFrom.has(targetKey)) return null;
+  let step = npc.target;
+  let previous = cameFrom.get(targetKey);
+  while (previous && positionKey(previous.x, previous.y) !== startKey) {
+    step = previous;
+    previous = cameFrom.get(positionKey(previous.x, previous.y));
+  }
+  return step;
+}
+
+function neighborsOf(point) {
+  return [
+    { x: point.x + 1, y: point.y },
+    { x: point.x - 1, y: point.y },
+    { x: point.x, y: point.y + 1 },
+    { x: point.x, y: point.y - 1 },
+  ];
+}
+
+function pointsAdjacentTo(cellType) {
+  const points = [];
+  map.grid.forEach((row, y) => row.forEach((cell, x) => {
+    if (cell !== cellType) return;
+    neighborsOf({ x, y }).forEach((point) => {
+      if (!tileAt(point.x, point.y).blocks) points.push(point);
+    });
+  }));
+  return uniquePoints(points);
+}
+
+function walkableTiles() {
+  const points = [];
+  for (let y = 0; y < map.height; y += 1) {
+    for (let x = 0; x < map.width; x += 1) {
+      if (!tileAt(x, y).blocks) points.push({ x, y });
+    }
+  }
+  return points;
+}
+
+function uniquePoints(points) {
+  const seen = new Set();
+  return points.filter((point) => {
+    const key = positionKey(point.x, point.y);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function randomItem(items) {
+  return items[Math.floor(Math.random() * items.length)];
+}
+
+function positionKey(x, y) {
+  return `${x},${y}`;
 }
 
 function draw() {
