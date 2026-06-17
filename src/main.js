@@ -26,7 +26,7 @@ const terrain = {
   '.': { color: 0x656b72, blocks: false, description: 'Station paving.' },
   '=': { color: 0x20242a, blocks: true, blocksView: false, description: 'The train line blocks the northern edge of town.' },
   'T': { color: 0x335f8f, blocks: false, blocksView: true, train: true, description: 'The waiting train. Step back aboard to end this loop.' },
-  'D': { color: 0x9b6a3c, blocks: false, description: 'An open doorway.' },
+  'D': { color: 0x9b6a3c, blocks: false, blocksView: true, description: 'An open doorway blocks your line of sight, but you can pass through.' },
   'W': { color: 0x4f6f8c, blocks: true, blocksView: false, description: 'A glass window blocks the way, but you can see through it.' },
   '~': { color: 0x317345, blocks: false, description: 'A patch of grass.' },
   'B': { color: 0x80613a, blocks: false, interact: 'You sit for a minute and watch the station repeat itself.', description: 'A station bench.' },
