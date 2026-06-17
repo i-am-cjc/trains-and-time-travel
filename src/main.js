@@ -300,15 +300,17 @@ async function loadMap(url, mapKey) {
   const width = Math.max(...rows.map((row) => row.length));
   const grid = rows.map((row) => row.padEnd(width, '#').split(''));
   const npcs = [];
+  const stairs = [];
   let start = { x: 1, y: 1 };
   grid.forEach((row, y) => row.forEach((cell, x) => {
     if (cell === 'P') start = { x, y };
+    if (cell === 'U') stairs.push({ x, y });
     if (cell === 'N' || cell === 'M') {
       npcs.push({ x, y, mapKey, profileKey: cell === 'M' ? 'stationMaster' : npcProfileAssignments[positionKey(x, y)] });
       grid[y][x] = '.';
     }
   }));
-  return { key: mapKey, grid, height: grid.length, width, start, npcs };
+  return { key: mapKey, grid, height: grid.length, width, start, stairs, npcs };
 }
 
 function tryMove(dx, dy) {
@@ -393,17 +395,19 @@ function isPlayerInsideStationSideRoom() {
 
 function useStairs() {
   if (state.currentMapKey === 'station') {
-    state.currentMapKey = 'underground';
-    map = maps.underground;
-    state.player = { x: 5, y: 3 };
+    movePlayerToMapStairs('underground');
     writeLog('You descend the narrow stairs into a small underground room.');
     return;
   }
 
-  state.currentMapKey = 'station';
-  map = maps.station;
-  state.player = { x: 70, y: 5 };
+  movePlayerToMapStairs('station');
   writeLog('You climb back up into the station side room.');
+}
+
+function movePlayerToMapStairs(mapKey) {
+  state.currentMapKey = mapKey;
+  map = maps[mapKey];
+  state.player = { ...(map.stairs[0] ?? map.start) };
 }
 
 function updateTerrain(tileType, changes) {
