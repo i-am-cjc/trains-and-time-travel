@@ -302,12 +302,14 @@ function draw() {
 
 function drawTile(x, y, isVisible) {
   const remembered = state.seen.has(`${x},${y}`);
+  const rememberedOnly = remembered && !isVisible;
   if (!isVisible && !remembered) return drawSprite(x, y, 'unknown', true);
-  drawSprite(x, y, map.grid[y][x], true, remembered && !isVisible);
+  drawSprite(x, y, map.grid[y][x], true, rememberedOnly, rememberedOnly ? 0.67 : 1);
 }
 
-function drawSprite(x, y, sprite, visible, desaturated = false) {
+function drawSprite(x, y, sprite, visible, desaturated = false, alpha = 1) {
   const g = new Graphics();
+  g.alpha = alpha;
   const tone = (color) => (desaturated ? desaturate(color) : color);
   const fill = (color) => (visible ? tone(color) : 0x000000);
   const px = x * TILE_SIZE;
