@@ -45,6 +45,19 @@ export const npcDefinitions = [
     routePreference: 'police station patrol',
   },
   {
+    key: 'policeGuard',
+    name: 'Police Guard',
+    description: 'A police guard stands watch over the station cells until the loop runs out.',
+    dialogue: [
+      'The police guard says, “You will wait here until this strange day resets.”',
+      'The police guard says, “No visitors. No release. Not before the clock turns over.”',
+    ],
+    blockedRemarks: [
+      'The police guard says, “Back in the cell.”',
+    ],
+    routePreference: 'police station guard',
+  },
+  {
     key: 'commuter',
     name: 'Mara Vale',
     description: 'A commuter in a raincoat keeps checking the platform clock.',

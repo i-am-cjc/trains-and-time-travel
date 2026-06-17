@@ -13,6 +13,7 @@ export const MAP_URLS = {
   officeFloor2: '/maps/office-floor-2.txt',
   officeFloor3: '/maps/office-floor-3.txt',
   officeFloor4: '/maps/office-floor-4.txt',
+  policeStation: '/maps/police-station.txt',
 };
 
 export const directions = {
