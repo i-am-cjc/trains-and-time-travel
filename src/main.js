@@ -145,7 +145,29 @@ async function loadMap(url, mapKey) {
     adjacentByCellType[cellType] = uniquePoints(points);
   });
 
-  return { key: mapKey, grid, height: grid.length, width, start, stairs, npcs, walkable, adjacentByCellType, trainTiles, trainDoorTiles };
+  const jailCellTiles = mapKey === 'policeStation' ? lockedJailCellTiles(grid, start) : [];
+
+  return { key: mapKey, grid, height: grid.length, width, start, stairs, npcs, walkable, adjacentByCellType, trainTiles, trainDoorTiles, jailCellTiles };
+}
+
+function lockedJailCellTiles(grid, start) {
+  const queue = [start];
+  const seen = new Set([positionKey(start.x, start.y)]);
+
+  for (let cursor = 0; cursor < queue.length; cursor += 1) {
+    const current = queue[cursor];
+    if (terrain[grid[current.y]?.[current.x]]?.jailDoor) continue;
+
+    neighborsOf(current).forEach((neighbor) => {
+      const key = positionKey(neighbor.x, neighbor.y);
+      const tile = terrain[grid[neighbor.y]?.[neighbor.x]] ?? terrain[' '];
+      if (seen.has(key) || tile.blocks) return;
+      seen.add(key);
+      queue.push(neighbor);
+    });
+  }
+
+  return [...seen];
 }
 
 function tryMove(dx, dy) {
@@ -155,6 +177,10 @@ function tryMove(dx, dy) {
   if (occupant) return spendMinute(npcDialogue(occupant));
   if (carAt(target.x, target.y)) return killPlayer('You step into the road and a car hits you before the loop can blink.');
   const tile = tileAt(target.x, target.y);
+  if (state.arrested && !isInsideLockedJailCell(target)) {
+    writeLog('The cell door is locked. You can pace the cell, but you cannot leave before the loop ends.');
+    return;
+  }
   if (tile.blocks) {
     writeLog(tile.description);
     return;
@@ -173,6 +199,10 @@ function tryMove(dx, dy) {
     : null;
   spendMinute(pickupMessage ?? trainDoorMessage);
   if (shouldTriggerLoop) resetLoop('The train pulls away, then arrives again. The loop begins from the platform.');
+}
+
+function isInsideLockedJailCell(point) {
+  return map.jailCellTiles?.includes(positionKey(point.x, point.y));
 }
 
 function interact() {
@@ -287,11 +317,13 @@ function arrestPlayer() {
   map = maps.policeStation;
   state.player = { ...map.start };
   state.arrested = true;
+  state.inventory = [];
   state.gunfirePanic = false;
   state.shootingMode = false;
   state.bullet = null;
   state.npcs = state.npcs.filter((npc) => npc.mapKey !== 'policeStation').concat(map.npcs.map(createNpcState));
   closeReadableOverlay();
+  renderInventory();
   draw();
   writeLog('The police arrest you and lock you in a station cell. Time keeps moving, but you cannot leave before the loop ends.');
 }
