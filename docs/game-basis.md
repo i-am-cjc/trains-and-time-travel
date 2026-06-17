@@ -23,11 +23,11 @@ The game canvas is mounted by `index.html`, with the engine in `src/main.js`.
 
 ## Time loop
 
-Each loop starts at 60 minutes. Every successful move or interaction spends one minute. At zero minutes, the player, townspeople, remembered tiles, and the world state reset to the map's initial state.
+Each loop starts at 120 minutes. Every successful move or interaction spends one minute. At zero minutes, the player, townspeople, remembered tiles, and the world state reset to the map's initial state.
 
 ## Map editing
 
-The editable map lives at `public/maps/station-loop.txt`. It is a plain text grid so non-programmers can reshape the station, car park, shops, and town without changing JavaScript.
+The main editable station map lives at `public/maps/station-loop.txt`, with the stair-linked underground room in `public/maps/underground-room.txt`. It is a plain text grid so non-programmers can reshape the station, car park, shops, and town without changing JavaScript.
 
 Legend:
 
@@ -42,6 +42,7 @@ Legend:
 | `C` | Parked car |
 | `S` | Shop |
 | `N` | Townsperson |
+| `M` | Station master NPC |
 | `B` | Bench |
 | `K` | Kiosk |
 | `A` | Announcement board |
@@ -52,8 +53,10 @@ Legend:
 | `O` | Station clock |
 | `~` | Grass |
 | `D` | Doorway |
+| `X` | Locked station side-room door |
+| `U` | Stairs between maps |
 
-Lines beginning with `;` are comments. The loader pads short rows with walls, but keeping the map rectangular makes it easier to edit.
+The station master starts near the train, walks to unlock the side-room door at minute 30, and returns to lock it at minute 60. Lines beginning with `;` are comments. The loader pads short rows with walls, but keeping the map rectangular makes it easier to edit.
 
 ## Rendering rules
 

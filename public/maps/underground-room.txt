@@ -1,0 +1,9 @@
+; Small underground room below the station
+; Legend: # wall, . floor, U stairs back up
+###########
+#.........#
+#.........#
+#....U....#
+#.........#
+#.........#
+###########

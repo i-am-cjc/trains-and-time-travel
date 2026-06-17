@@ -5,7 +5,10 @@ const TILE_SIZE = 32;
 const LOOP_MINUTES = 120;
 const POCKET_WATCH_BONUS_MINUTES = 30;
 const SIGHT_RADIUS = 100;
-const MAP_URL = '/maps/station-loop.txt';
+const MAP_URLS = {
+  station: '/maps/station-loop.txt',
+  underground: '/maps/underground-room.txt',
+};
 const RESET_EFFECT_MS = 900;
 const MAX_LOG_ENTRIES = 80;
 
@@ -23,6 +26,21 @@ const npcBlockedRemarks = [
 ];
 
 const npcDefinitions = [
+  {
+    key: 'stationMaster',
+    name: 'Station Master',
+    description: 'The station master keeps one eye on the train and one hand on a heavy brass key.',
+    dialogue: [
+      'The station master says, “Rules are rules. That side room opens at half past and closes on the hour.”',
+      'The station master pats a brass key. “If you hear me lock it, do not linger below.”',
+      'The station master says, “Mind the stairs. They lead under more than the platform.”',
+    ],
+    blockedRemarks: [
+      'The station master says, “Stand clear, please. I have a door to attend.”',
+      'The station master rattles the keyring. “Official business.”',
+    ],
+    routePreference: 'station master timed door',
+  },
   {
     key: 'commuter',
     name: 'Mara Vale',
@@ -97,6 +115,9 @@ const terrain = {
   'R': { color: 0x64748b, blocks: true, blocksView: false, interact: 'The ticket barrier rejects your ticket, then stamps tomorrow on it.', description: 'A closed ticket barrier.' },
   'O': { color: 0xf8fafc, blocks: true, blocksView: false, interact: 'The station clock ticks once, but every hand points toward departure.', description: 'A round station clock.' },
   'N': { color: 0xff8a65, blocks: true, blocksView: false, npc: true, interact: 'They mutter about catching the same train again.', description: 'A townsperson.' },
+  'M': { color: 0x38bdf8, blocks: true, blocksView: false, npc: true, interact: 'The station master checks a brass key and the platform clock.', description: 'The station master.' },
+  'X': { color: 0x5b3418, blocks: true, blocksView: true, lockedDoor: true, interact: 'The station side-room door is locked tight.', description: 'A locked station side-room door.' },
+  'U': { color: 0xa78bfa, blocks: false, blocksView: false, stairs: true, description: 'A narrow stairwell descends beneath the station.' },
   'P': { color: 0x656b72, blocks: false, start: true, description: 'Your starting point on the platform.' },
   ' ': { color: 0x111111, blocks: true, description: 'An unmapped void.' },
 };
@@ -173,6 +194,33 @@ const scheduledEvents = [
       writeLog('Every shop sign flips at once: “BACK IN FIVE MINUTES.”');
     },
   },
+
+  {
+    id: 'station-master-unlock-door',
+    triggerMinute: 30,
+    oncePerLoop: true,
+    effect: () => {
+      const stationMaster = state.npcs.find((npc) => npc.profile.key === 'stationMaster');
+      if (stationMaster) {
+        stationMaster.target = { x: 61, y: 8 };
+        if (stationMaster.x === 61 && stationMaster.y === 8) openStationDoor();
+      }
+      writeLog('The station master checks the platform clock and starts toward the side-room door.');
+    },
+  },
+  {
+    id: 'station-master-lock-door',
+    triggerMinute: 60,
+    oncePerLoop: true,
+    effect: () => {
+      const stationMaster = state.npcs.find((npc) => npc.profile.key === 'stationMaster');
+      if (stationMaster) {
+        stationMaster.target = { x: 61, y: 8 };
+        if (stationMaster.x === 61 && stationMaster.y === 8) closeStationDoor();
+      }
+      writeLog('The station master turns back toward the side-room door with the brass key ready.');
+    },
+  },
   {
     id: 'train-final-warning',
     triggerMinute: ({ loopLimit }) => loopLimit - 10,
@@ -190,7 +238,10 @@ await app.init({ background: '#000000', resizeTo: document.querySelector('#game'
 document.querySelector('#game').appendChild(app.canvas);
 app.stage.addChild(world);
 
-const map = await loadMap(MAP_URL);
+const maps = Object.fromEntries(await Promise.all(
+  Object.entries(MAP_URLS).map(async ([key, url]) => [key, await loadMap(url, key)]),
+));
+let map = maps.station;
 resetLoop('The doors hiss open. You step onto the platform with two hours before everything resets.', { effect: false });
 
 window.addEventListener('keydown', (event) => {
@@ -221,6 +272,7 @@ app.canvas.addEventListener('click', (event) => {
 
 function resetLoop(message, { effect = true } = {}) {
   loopCount += 1;
+  map = maps.station;
   state = {
     player: { ...map.start },
     minutesLeft: LOOP_MINUTES,
@@ -228,10 +280,12 @@ function resetLoop(message, { effect = true } = {}) {
     inventory: [],
     items: placedItems.map((item) => ({ ...item })),
     terrainOverrides: {},
+    tileOverrides: {},
+    currentMapKey: 'station',
     triggeredEventIds: new Set(),
     facing: [0, 1],
     seen: new Set(),
-    npcs: map.npcs.map(createNpcState),
+    npcs: maps.station.npcs.map(createNpcState),
   };
   if (effect) playResetEffect();
   draw();
@@ -239,7 +293,7 @@ function resetLoop(message, { effect = true } = {}) {
   writeLog(message);
 }
 
-async function loadMap(url) {
+async function loadMap(url, mapKey) {
   const text = await fetch(url).then((response) => response.text());
   const rows = text.split('\n').filter((line) => line && !line.startsWith(';'));
   const width = Math.max(...rows.map((row) => row.length));
@@ -248,12 +302,12 @@ async function loadMap(url) {
   let start = { x: 1, y: 1 };
   grid.forEach((row, y) => row.forEach((cell, x) => {
     if (cell === 'P') start = { x, y };
-    if (cell === 'N') {
-      npcs.push({ x, y, profileKey: npcProfileAssignments[positionKey(x, y)] });
+    if (cell === 'N' || cell === 'M') {
+      npcs.push({ x, y, mapKey, profileKey: cell === 'M' ? 'stationMaster' : npcProfileAssignments[positionKey(x, y)] });
       grid[y][x] = '.';
     }
   }));
-  return { grid, height: grid.length, width, start, npcs };
+  return { key: mapKey, grid, height: grid.length, width, start, npcs };
 }
 
 function tryMove(dx, dy) {
@@ -267,6 +321,7 @@ function tryMove(dx, dy) {
     return;
   }
   state.player = target;
+  if (tile.stairs) useStairs();
   const item = itemAt(target.x, target.y);
   const pickupMessage = item ? pickUpItem(item) : null;
   spendMinute(pickupMessage ?? (tile.train ? 'You step back onto the train and deliberately end the loop.' : null));
@@ -303,6 +358,53 @@ function runScheduledEvents() {
   });
 }
 
+function setTileOverride(mapKey, x, y, tileType) {
+  state.tileOverrides[mapKey] = { ...(state.tileOverrides[mapKey] ?? {}), [positionKey(x, y)]: tileType };
+}
+
+function stationDoorTile() {
+  return tileAtFor('station', 62, 8);
+}
+
+function openStationDoor() {
+  if (!stationDoorTile().lockedDoor) return;
+  setTileOverride('station', 62, 8, 'D');
+  writeLog('The station master unlocks the side-room door with a bright brass click.');
+}
+
+function closeStationDoor() {
+  if (stationDoorTile().lockedDoor) return;
+  setTileOverride('station', 62, 8, 'X');
+  writeLog('The station master locks the side-room door again.');
+  if (isPlayerInsideStationSideRoom()) {
+    writeLog('You hear the lock turn somewhere above. You are still inside the station side room.');
+  }
+}
+
+function isPlayerInsideStationSideRoom() {
+  if (state.currentMapKey === 'underground') return true;
+  return state.currentMapKey === 'station'
+    && state.player.x >= 64
+    && state.player.x <= 73
+    && state.player.y >= 7
+    && state.player.y <= 11;
+}
+
+function useStairs() {
+  if (state.currentMapKey === 'station') {
+    state.currentMapKey = 'underground';
+    map = maps.underground;
+    state.player = { x: 5, y: 3 };
+    writeLog('You descend the narrow stairs into a small underground room.');
+    return;
+  }
+
+  state.currentMapKey = 'station';
+  map = maps.station;
+  state.player = { x: 70, y: 5 };
+  writeLog('You climb back up into the station side room.');
+}
+
 function updateTerrain(tileType, changes) {
   state.terrainOverrides[tileType] = { ...(state.terrainOverrides[tileType] ?? {}), ...changes };
 }
@@ -312,7 +414,7 @@ function moveItem(itemId, position) {
 }
 
 function moveNpcs() {
-  const occupied = new Set(state.npcs.map((npc) => positionKey(npc.x, npc.y)));
+  const occupied = new Set(state.npcs.map((npc) => `${npc.mapKey}:${positionKey(npc.x, npc.y)}`));
   const remarks = [];
 
   state.npcs = state.npcs.map((npc) => {
@@ -324,20 +426,35 @@ function moveNpcs() {
     const step = nextStepToward(traveler, occupied);
     if (!step) return traveler;
 
-    if (step.x === state.player.x && step.y === state.player.y) {
+    if (traveler.mapKey === state.currentMapKey && step.x === state.player.x && step.y === state.player.y) {
       remarks.push(npcBlockedRemark(traveler));
       return traveler;
     }
 
-    const stepKey = positionKey(step.x, step.y);
-    if (occupied.has(stepKey) || tileAt(step.x, step.y).blocks) return traveler;
+    const stepKey = `${traveler.mapKey}:${positionKey(step.x, step.y)}`;
+    if (occupied.has(stepKey) || tileAtFor(traveler.mapKey, step.x, step.y).blocks) return traveler;
 
-    occupied.delete(positionKey(traveler.x, traveler.y));
+    occupied.delete(`${traveler.mapKey}:${positionKey(traveler.x, traveler.y)}`);
     occupied.add(stepKey);
-    return { ...traveler, x: step.x, y: step.y };
+    const moved = { ...traveler, x: step.x, y: step.y };
+    handleNpcArrival(moved);
+    return moved;
   });
 
   remarks.forEach((remark) => writeLog(remark));
+}
+
+function handleNpcArrival(npc) {
+  if (npc.profile.key !== 'stationMaster' || npc.x !== 61 || npc.y !== 8) return;
+  if (elapsedMinutes() >= 60) {
+    closeStationDoor();
+    npc.target = { x: 54, y: 8 };
+    return;
+  }
+  if (elapsedMinutes() >= 30) {
+    openStationDoor();
+    npc.target = { x: 54, y: 8 };
+  }
 }
 
 function createNpcState(npc, index) {
@@ -353,6 +470,10 @@ function createNpcRoute(npc, profile) {
   const walkStops = walkableTiles().filter((point) => !tileAt(point.x, point.y).train);
   const platformStops = walkableTiles().filter((point) => nearbyTrain(point, 4));
   const start = { x: npc.x, y: npc.y };
+
+  if (profile.routePreference === 'station master timed door') {
+    return [start, { x: 54, y: 8 }];
+  }
 
   if (profile.routePreference === 'commuter to train' && trainStops.length) {
     return [start, randomItem(trainStops)];
@@ -417,8 +538,8 @@ function nextStepToward(npc, occupied) {
 
     neighborsOf(current).forEach((neighbor) => {
       const key = positionKey(neighbor.x, neighbor.y);
-      if (cameFrom.has(key) || tileAt(neighbor.x, neighbor.y).blocks) return;
-      if (occupied.has(key) && key !== targetKey) return;
+      if (cameFrom.has(key) || tileAtFor(npc.mapKey, neighbor.x, neighbor.y).blocks) return;
+      if (occupied.has(`${npc.mapKey}:${key}`) && key !== targetKey) return;
       cameFrom.set(key, current);
       queue.push(neighbor);
     });
@@ -445,7 +566,7 @@ function neighborsOf(point) {
 
 function pointsAdjacentTo(cellType) {
   const points = [];
-  map.grid.forEach((row, y) => row.forEach((cell, x) => {
+  grid.forEach((row, y) => row.forEach((cell, x) => {
     if (cell !== cellType) return;
     neighborsOf({ x, y }).forEach((point) => {
       if (!tileAt(point.x, point.y).blocks) points.push(point);
@@ -494,8 +615,8 @@ function draw() {
   state.items.forEach((item) => {
     if (visible.has(`${item.x},${item.y}`)) drawItem(item, true);
   });
-  state.npcs.forEach((npc) => {
-    if (visible.has(`${npc.x},${npc.y}`)) drawSprite(npc.x, npc.y, 'N', true);
+  state.npcs.filter((npc) => npc.mapKey === state.currentMapKey).forEach((npc) => {
+    if (visible.has(`${npc.x},${npc.y}`)) drawSprite(npc.x, npc.y, npc.profile.key === 'stationMaster' ? 'M' : 'N', true);
   });
   drawSprite(state.player.x, state.player.y, 'player', true);
   world.x = Math.round(app.screen.width / 2 - (state.player.x + 0.5) * TILE_SIZE);
@@ -640,9 +761,10 @@ function drawSprite(x, y, sprite, visible, desaturated = false, alpha = 1) {
       g.moveTo(px + 16, py + 16).lineTo(px + 16, py + 10).lineTo(px + 20, py + 16).stroke({ color: tone(0x1f2937), width: 1.5 });
       break;
     case 'N':
+    case 'M':
     case 'player':
-      g.circle(px + 16, py + 9, 5).fill(tone(sprite === 'player' ? 0x61dafb : 0xffc0a8));
-      g.roundRect(px + 10, py + 15, 12, 11, 3).fill(tone(sprite === 'player' ? 0x1d8fb8 : 0xff8a65));
+      g.circle(px + 16, py + 9, 5).fill(tone(sprite === 'player' ? 0x61dafb : (sprite === 'M' ? 0xbfdbfe : 0xffc0a8)));
+      g.roundRect(px + 10, py + 15, 12, 11, 3).fill(tone(sprite === 'player' ? 0x1d8fb8 : (sprite === 'M' ? 0x2563eb : 0xff8a65)));
       g.rect(px + 8, py + 26, 6, 4).fill(tone(0x20242a));
       g.rect(px + 18, py + 26, 6, 4).fill(tone(0x20242a));
       break;
@@ -699,13 +821,19 @@ function blocksView(x, y) {
 }
 
 function tileAt(x, y) {
-  const tileType = map.grid[y]?.[x];
+  return tileAtFor(state.currentMapKey, x, y);
+}
+
+function tileAtFor(mapKey, x, y) {
+  const targetMap = maps?.[mapKey] ?? map;
+  const override = state?.tileOverrides?.[mapKey]?.[positionKey(x, y)];
+  const tileType = override ?? targetMap.grid[y]?.[x];
   const baseTile = terrain[tileType] ?? terrain[' '];
   return { ...baseTile, ...(state?.terrainOverrides[tileType] ?? {}) };
 }
 
 function npcAt(x, y) {
-  return state.npcs.find((npc) => npc.x === x && npc.y === y);
+  return state.npcs.find((npc) => npc.mapKey === state.currentMapKey && npc.x === x && npc.y === y);
 }
 
 function itemAt(x, y) {
