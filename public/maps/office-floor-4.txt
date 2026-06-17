@@ -1,10 +1,10 @@
 ; Office block upper floor
 ; Legend: # wall, . floor, ^ stairs up, v stairs down, N office NPC, o desk, p plant
 ########
-#v..p..#
+#...p..#
 #.oo.N.#
 #......#
 #.N.oo.#
 #......#
-#..p...#
+#v.p...#
 ########
