@@ -313,6 +313,7 @@ function updateCarSpawns() {
 }
 
 function arrestPlayer() {
+  if (state.arrested) return;
   state.currentMapKey = 'policeStation';
   map = maps.policeStation;
   state.player = { ...map.start };
@@ -321,7 +322,10 @@ function arrestPlayer() {
   state.gunfirePanic = false;
   state.shootingMode = false;
   state.bullet = null;
-  state.npcs = state.npcs.filter((npc) => npc.mapKey !== 'policeStation').concat(map.npcs.map(createNpcState));
+  state.npcs = state.npcs
+    .filter((npc) => npc.mapKey !== 'policeStation')
+    .map((npc) => ({ ...npc, arrestingPlayer: false }))
+    .concat(map.npcs.map(createNpcState));
   closeReadableOverlay();
   renderInventory();
   draw();
@@ -493,7 +497,7 @@ function moveNpcs() {
     return moved;
   });
 
-  const playerArrested = state.npcs.some((npc) => npc.arrestingPlayer);
+  const playerArrested = !state.arrested && state.npcs.some((npc) => npc.arrestingPlayer);
   if (playerArrested) {
     arrestPlayer();
     return;
