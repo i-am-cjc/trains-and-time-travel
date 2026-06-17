@@ -19,12 +19,8 @@ let state;
 let loopCount = 0;
 let resetEffectTimeout;
 const bloodStains = new Set();
-const CAR_SPAWN_MINUTES = 10;
+const CAR_SPAWN_MINUTES = 5;
 const CAR_SPAWN_MAX_MINUTES = 15;
-const carSpawnPoints = [
-  { key: 'left', x: -1, y: 37, dx: 1, sprite: 'carRight', initialDelay: 0 },
-  { key: 'right', x: 80, y: 38, dx: -1, sprite: 'carLeft', initialDelay: 2 },
-];
 
 const itemDefinitions = createItemDefinitions({ addLoopMinutes, writeLog, draw });
 const scheduledEvents = createScheduledEvents({ updateTerrain, moveItem, writeLog, queueStationMasterDoorAction });
@@ -92,7 +88,6 @@ function resetLoop(message, { effect = true } = {}) {
     stationMasterScolding: false,
   };
   state.npcs = maps.station.npcs.map(createNpcState);
-  spawnInitialCars();
   if (effect) playResetEffect();
   draw();
   renderInventory();
@@ -159,25 +154,24 @@ function spendMinute(message) {
 }
 
 
+function carSpawnerItems() {
+  return state.items.filter((item) => item.type === 'carSpawnerLeft' || item.type === 'carSpawnerRight');
+}
+
 function createCarSpawnTimers() {
-  return Object.fromEntries(carSpawnPoints.map((spawn) => [
-    spawn.key,
-    spawn.initialDelay + nextCarSpawnDelay(),
-  ]));
+  return Object.fromEntries(placedItems
+    .filter((item) => item.type === 'carSpawnerLeft' || item.type === 'carSpawnerRight')
+    .map((spawner) => [spawner.id, nextCarSpawnDelay()]));
 }
 
-function spawnInitialCars() {
-  carSpawnPoints.forEach((spawn) => spawnCar(spawn));
-}
-
-function spawnCar(spawn) {
+function spawnCar(spawner) {
   state.cars.push({
     id: `car-${state.nextCarId}`,
-    mapKey: 'station',
-    x: spawn.x,
-    y: spawn.y,
-    dx: spawn.dx,
-    sprite: spawn.sprite,
+    mapKey: spawner.mapKey ?? 'station',
+    x: spawner.x,
+    y: spawner.y,
+    dx: spawner.dx,
+    sprite: spawner.dx < 0 ? 'carLeft' : 'carRight',
   });
   state.nextCarId += 1;
 }
@@ -190,25 +184,25 @@ function moveCars() {
   updateCarSpawns();
   state.cars = state.cars
     .map((car) => ({ ...car, x: car.x + car.dx }))
-    .filter((car) => car.x >= -1 && car.x <= maps.station.width);
+    .filter((car) => car.x >= 0 && car.x < maps.station.width);
 
   if (state.currentMapKey !== 'station') return false;
   const hitCar = carAt(state.player.x, state.player.y);
   if (!hitCar) return false;
-  killPlayer('A car barrels down the road on the left-hand lane and knocks you out of the loop.');
+  killPlayer('A car barrels down the road and knocks you out of the loop.');
   return true;
 }
 
 function updateCarSpawns() {
-  carSpawnPoints.forEach((spawn) => {
-    const minutesUntilSpawn = state.carSpawnTimers[spawn.key] ?? 0;
-    if (minutesUntilSpawn > 0) {
-      state.carSpawnTimers[spawn.key] = minutesUntilSpawn - 1;
+  carSpawnerItems().forEach((spawner) => {
+    const minutesUntilSpawn = state.carSpawnTimers[spawner.id] ?? 0;
+    if (minutesUntilSpawn > 1) {
+      state.carSpawnTimers[spawner.id] = minutesUntilSpawn - 1;
       return;
     }
 
-    spawnCar(spawn);
-    state.carSpawnTimers[spawn.key] = nextCarSpawnDelay();
+    spawnCar(spawner);
+    state.carSpawnTimers[spawner.id] = nextCarSpawnDelay();
   });
 }
 
@@ -598,10 +592,15 @@ function draw() {
 
 function drawItem(item, visible) {
   const definition = itemDefinitions[item.type];
+  if (!visible) return;
+  if (item.type === 'carSpawnerLeft' || item.type === 'carSpawnerRight') {
+    drawSprite(item.x, item.y, 'h', true);
+    return;
+  }
+
   const g = new Graphics();
   const px = item.x * TILE_SIZE;
   const py = item.y * TILE_SIZE;
-  if (!visible) return;
   g.circle(px + 16, py + 16, 7).fill(definition.color);
   g.circle(px + 16, py + 16, 5).stroke({ color: 0x20242a, width: 2 });
   g.moveTo(px + 16, py + 16).lineTo(px + 16, py + 11).lineTo(px + 19, py + 16).stroke({ color: 0x20242a, width: 1.5 });
@@ -858,15 +857,22 @@ function npcAt(x, y) {
 }
 
 function carAt(x, y) {
-  return state.cars.find((car) => car.mapKey === state.currentMapKey && car.x === x && car.y === y && car.wait <= 0);
+  return state.cars.find((car) => car.mapKey === state.currentMapKey && car.x === x && car.y === y);
 }
 
 function itemAt(x, y) {
-  return state.items.find((item) => (item.mapKey ?? 'station') === state.currentMapKey && item.x === x && item.y === y);
+  return state.items.find((item) => {
+    const definition = itemDefinitions[item.type];
+    return definition?.collectible !== false
+      && (item.mapKey ?? 'station') === state.currentMapKey
+      && item.x === x
+      && item.y === y;
+  });
 }
 
 function pickUpItem(item) {
   const definition = itemDefinitions[item.type];
+  if (definition.collectible === false) return null;
   state.items = state.items.filter((candidate) => candidate.id !== item.id);
   state.inventory.push({ id: item.id, type: item.type, name: definition.name, description: definition.description });
   renderInventory();
