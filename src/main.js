@@ -8,6 +8,11 @@ const SIGHT_RADIUS = 100;
 const MAP_URLS = {
   station: '/maps/station-loop.txt',
   underground: '/maps/underground-room.txt',
+  officeReception: '/maps/office-reception.txt',
+  officeFloor1: '/maps/office-floor-1.txt',
+  officeFloor2: '/maps/office-floor-2.txt',
+  officeFloor3: '/maps/office-floor-3.txt',
+  officeFloor4: '/maps/office-floor-4.txt',
 };
 const RESET_EFFECT_MS = 900;
 const MAX_LOG_ENTRIES = 80;
@@ -31,7 +36,7 @@ const npcDefinitions = [
     name: 'Station Master',
     description: 'The station master keeps one eye on the train and one hand on a heavy brass key.',
     dialogue: [
-      'The station master says, “Rules are rules. That side room opens at half past and closes on the hour.”',
+      'The station master says, “Rules are rules. That side room opens at half past and closes at minute seventy-five.”',
       'The station master pats a brass key. “If you hear me lock it, do not linger below.”',
       'The station master says, “Mind the stairs. They lead under more than the platform.”',
     ],
@@ -118,6 +123,13 @@ const terrain = {
   'M': { color: 0x38bdf8, blocks: true, blocksView: false, npc: true, interact: 'The station master checks a brass key and the platform clock.', description: 'The station master.' },
   'X': { color: 0x5b3418, blocks: true, blocksView: true, lockedDoor: true, interact: 'The station side-room door is locked tight.', description: 'A locked station side-room door.' },
   'U': { color: 0xa78bfa, blocks: false, blocksView: false, stairs: true, description: 'A narrow stairwell descends beneath the station.' },
+  '^': { color: 0x22c55e, blocks: false, blocksView: false, stairsUp: true, description: 'Stairs marked with an upward arrow.' },
+  'v': { color: 0xf97316, blocks: false, blocksView: false, stairsDown: true, description: 'Stairs marked with a downward arrow.' },
+  'E': { color: 0x475569, blocks: false, blocksView: true, officeEntrance: true, description: 'The glass entrance to an office block.' },
+  'Q': { color: 0x475569, blocks: false, blocksView: true, officeExit: true, description: 'The office block exit back to the station district.' },
+  'r': { color: 0x8b5cf6, blocks: true, blocksView: false, interact: 'The reception desk has a visitor book filled with today repeated line after line.', description: 'A reception desk for the office block.' },
+  'o': { color: 0x94a3b8, blocks: true, blocksView: false, interact: 'The desk is covered in coffee rings, memos, and a calendar stuck on this date.', description: 'An office desk.' },
+  'p': { color: 0x16a34a, blocks: true, blocksView: false, interact: 'The plant seems healthier each time the loop starts over.', description: 'A potted office plant.' },
   'P': { color: 0x656b72, blocks: false, start: true, description: 'Your starting point on the platform.' },
   ' ': { color: 0x111111, blocks: true, description: 'An unmapped void.' },
 };
@@ -157,7 +169,7 @@ const itemDefinitions = {
 };
 
 const placedItems = [
-  { id: 'pocket-watch', type: 'pocketWatch', x: 23, y: 27 },
+  { id: 'pocket-watch', type: 'pocketWatch', mapKey: 'station', x: 23, y: 27 },
 ];
 
 const scheduledEvents = [
@@ -210,7 +222,7 @@ const scheduledEvents = [
   },
   {
     id: 'station-master-lock-door',
-    triggerMinute: 60,
+    triggerMinute: 75,
     oncePerLoop: true,
     effect: () => {
       const stationMaster = state.npcs.find((npc) => npc.profile.key === 'stationMaster');
@@ -304,7 +316,7 @@ async function loadMap(url, mapKey) {
   let start = { x: 1, y: 1 };
   grid.forEach((row, y) => row.forEach((cell, x) => {
     if (cell === 'P') start = { x, y };
-    if (cell === 'U') stairs.push({ x, y });
+    if (cell === 'U' || cell === '^' || cell === 'v' || cell === 'E' || cell === 'Q') stairs.push({ x, y, type: cell });
     if (cell === 'N' || cell === 'M') {
       npcs.push({ x, y, mapKey, profileKey: cell === 'M' ? 'stationMaster' : npcProfileAssignments[positionKey(x, y)] });
       grid[y][x] = '.';
@@ -324,7 +336,7 @@ function tryMove(dx, dy) {
     return;
   }
   state.player = target;
-  if (tile.stairs) useStairs();
+  if (tile.stairs || tile.stairsUp || tile.stairsDown || tile.officeEntrance || tile.officeExit) useStairs(tile);
   const item = itemAt(target.x, target.y);
   const pickupMessage = item ? pickUpItem(item) : null;
   spendMinute(pickupMessage ?? (tile.train ? 'You step back onto the train and deliberately end the loop.' : null));
@@ -393,21 +405,58 @@ function isPlayerInsideStationSideRoom() {
     && state.player.y <= 11;
 }
 
-function useStairs() {
+function useStairs(tile) {
+  if (tile.officeEntrance) {
+    movePlayerToMapStairs('officeReception', 'Q');
+    writeLog('You step into the office block reception, where the workday loops in miniature.');
+    return;
+  }
+
+  if (tile.officeExit) {
+    movePlayerToMapStairs('station', 'E');
+    writeLog('You leave the office block and return to the station district.');
+    return;
+  }
+
+  if (tile.stairsUp) {
+    const nextMapKey = nextOfficeFloorKey(1);
+    if (nextMapKey) {
+      movePlayerToMapStairs(nextMapKey, 'v');
+      writeLog('You climb the office stairs to the floor above.');
+    }
+    return;
+  }
+
+  if (tile.stairsDown) {
+    const nextMapKey = nextOfficeFloorKey(-1);
+    if (nextMapKey) {
+      movePlayerToMapStairs(nextMapKey, '^');
+      writeLog('You descend the office stairs to the floor below.');
+    }
+    return;
+  }
+
   if (state.currentMapKey === 'station') {
-    movePlayerToMapStairs('underground');
+    movePlayerToMapStairs('underground', 'U');
     writeLog('You descend the narrow stairs into a small underground room.');
     return;
   }
 
-  movePlayerToMapStairs('station');
+  movePlayerToMapStairs('station', 'U');
   writeLog('You climb back up into the station side room.');
 }
 
-function movePlayerToMapStairs(mapKey) {
+function nextOfficeFloorKey(direction) {
+  const officeMapOrder = ['officeReception', 'officeFloor1', 'officeFloor2', 'officeFloor3', 'officeFloor4'];
+  const nextIndex = officeMapOrder.indexOf(state.currentMapKey) + direction;
+  return officeMapOrder[nextIndex];
+}
+
+function movePlayerToMapStairs(mapKey, stairType) {
   state.currentMapKey = mapKey;
   map = maps[mapKey];
-  state.player = { ...(map.stairs[0] ?? map.start) };
+  const destination = map.stairs.find((stair) => stair.type === stairType) ?? map.stairs[0] ?? map.start;
+  state.player = { x: destination.x, y: destination.y };
 }
 
 function updateTerrain(tileType, changes) {
@@ -451,7 +500,7 @@ function moveNpcs() {
 
 function handleNpcArrival(npc) {
   if (npc.profile.key !== 'stationMaster' || npc.x !== 61 || npc.y !== 8) return;
-  if (elapsedMinutes() >= 60) {
+  if (elapsedMinutes() >= 75) {
     closeStationDoor();
     npc.target = { x: 54, y: 8 };
     return;
@@ -618,7 +667,7 @@ function draw() {
       drawTile(x, y, visible.has(`${x},${y}`));
     }
   }
-  state.items.forEach((item) => {
+  state.items.filter((item) => (item.mapKey ?? 'station') === state.currentMapKey).forEach((item) => {
     if (visible.has(`${item.x},${item.y}`)) drawItem(item, true);
   });
   state.npcs.filter((npc) => npc.mapKey === state.currentMapKey).forEach((npc) => {
@@ -726,6 +775,40 @@ function drawSprite(x, y, sprite, visible, desaturated = false, alpha = 1) {
       g.rect(px + 5, py + 7, 22, 18).fill(tone(0xa855f7));
       g.rect(px + 7, py + 9, 18, 6).fill(tone(0xe8dcff));
       g.rect(px + 13, py + 17, 6, 8).fill(tone(0x5b2b82));
+      break;
+    case 'E':
+    case 'Q':
+      g.rect(px + 5, py + 4, 22, 24).fill(tone(0x334155));
+      g.rect(px + 8, py + 7, 16, 18).fill(tone(0x93c5fd));
+      g.rect(px + 15, py + 7, 2, 18).fill(tone(0xe0f2fe));
+      g.circle(px + (sprite === 'E' ? 21 : 11), py + 16, 2).fill(tone(0xfacc15));
+      break;
+    case 'r':
+      g.rect(px + 4, py + 13, 24, 12).fill(tone(0x8b5cf6));
+      g.rect(px + 7, py + 9, 18, 5).fill(tone(0xc4b5fd));
+      g.rect(px + 10, py + 17, 12, 2).fill(tone(0xf8fafc));
+      break;
+    case 'o':
+      g.rect(px + 5, py + 10, 22, 13).fill(tone(0x94a3b8));
+      g.rect(px + 8, py + 13, 8, 6).fill(tone(0xe2e8f0));
+      g.rect(px + 18, py + 13, 6, 2).fill(tone(0x475569));
+      g.rect(px + 8, py + 23, 3, 6).fill(tone(0x475569));
+      g.rect(px + 21, py + 23, 3, 6).fill(tone(0x475569));
+      break;
+    case 'p':
+      g.rect(px + 10, py + 21, 12, 7).fill(tone(0x92400e));
+      g.circle(px + 12, py + 16, 6).fill(tone(0x22c55e));
+      g.circle(px + 20, py + 14, 7).fill(tone(0x16a34a));
+      g.circle(px + 16, py + 9, 5).fill(tone(0x4ade80));
+      break;
+    case '^':
+    case 'v':
+      g.rect(px + 4, py + 4, 24, 24).fill(tone(sprite === '^' ? 0x22c55e : 0xf97316));
+      if (sprite === '^') {
+        g.moveTo(px + 16, py + 7).lineTo(px + 24, py + 18).lineTo(px + 19, py + 18).lineTo(px + 19, py + 25).lineTo(px + 13, py + 25).lineTo(px + 13, py + 18).lineTo(px + 8, py + 18).fill(tone(0xf8fafc));
+      } else {
+        g.moveTo(px + 16, py + 25).lineTo(px + 24, py + 14).lineTo(px + 19, py + 14).lineTo(px + 19, py + 7).lineTo(px + 13, py + 7).lineTo(px + 13, py + 14).lineTo(px + 8, py + 14).fill(tone(0xf8fafc));
+      }
       break;
     case 'K':
       g.rect(px + 7, py + 8, 18, 18).fill(tone(0xf6c453));
@@ -843,7 +926,7 @@ function npcAt(x, y) {
 }
 
 function itemAt(x, y) {
-  return state.items.find((item) => item.x === x && item.y === y);
+  return state.items.find((item) => (item.mapKey ?? 'station') === state.currentMapKey && item.x === x && item.y === y);
 }
 
 function pickUpItem(item) {
