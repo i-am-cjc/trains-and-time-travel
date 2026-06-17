@@ -217,11 +217,31 @@ function moveCars() {
     .map((car) => ({ ...car, x: car.x + car.dx }))
     .filter((car) => car.x >= 0 && car.x < maps[car.mapKey].width);
 
+  killNpcsHitByCars();
+
   if (state.currentMapKey !== 'station') return false;
   const hitCar = carAt(state.player.x, state.player.y);
   if (!hitCar) return false;
   killPlayer('A car barrels down the road and knocks you out of the loop.');
   return true;
+}
+
+function killNpcsHitByCars() {
+  const victims = state.npcs.filter((npc) => carAtOnMap(npc.mapKey, npc.x, npc.y));
+  if (!victims.length) return;
+
+  const victimKeys = new Set(victims.map((npc) => `${npc.mapKey}:${positionKey(npc.x, npc.y)}`));
+  state.npcs = state.npcs.filter((npc) => !victimKeys.has(`${npc.mapKey}:${positionKey(npc.x, npc.y)}`));
+  victims.forEach((npc) => killNpc(npc));
+}
+
+function killNpc(npc) {
+  bloodStains.add(`${npc.mapKey}:${positionKey(npc.x, npc.y)}`);
+  writeLog(`${npc.profile.name} is struck by a passing car and killed.`);
+  if (npc.profile.key === 'stationMaster') {
+    state.stationMasterScolding = false;
+    writeLog('Without the station master, the brass-key door will not be tended this loop.');
+  }
 }
 
 function updateCarSpawns() {
