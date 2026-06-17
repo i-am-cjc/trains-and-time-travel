@@ -39,6 +39,7 @@ const npcDefinitions = [
       'The station master says, “Rules are rules. That side room opens at half past and closes at minute seventy-five.”',
       'The station master pats a brass key. “If you hear me lock it, do not linger below.”',
       'The station master says, “Mind the stairs. They lead under more than the platform.”',
+      'The station master says, “Off the tracks at once! Timetables are difficult enough without trespassers.”',
     ],
     blockedRemarks: [
       'The station master says, “Stand clear, please. I have a door to attend.”',
@@ -104,7 +105,7 @@ const terrain = {
   '#': { color: 0x38404d, blocks: true, description: 'A solid wall blocks the way.' },
   '.': { color: 0x656b72, blocks: false, blocksView: false, description: 'Station paving.' },
   '-': { color: 0x7f858c, blocks: false, blocksView: false, description: 'A raised platform edge running beside the track.' },
-  '=': { color: 0x20242a, blocks: true, blocksView: false, description: 'The train line blocks the northern edge of town.' },
+  '=': { color: 0x20242a, blocks: false, blocksView: false, track: true, description: 'The train tracks hum with dangerous loop-energy. The station master will not approve.' },
   'T': { color: 0x335f8f, blocks: false, blocksView: true, train: true, description: 'The waiting train. Step back aboard to end this loop.' },
   'D': { color: 0x9b6a3c, blocks: false, blocksView: true, description: 'An open doorway blocks your line of sight, but you can pass through.' },
   'W': { color: 0x4f6f8c, blocks: true, blocksView: false, description: 'A glass window blocks the way, but you can see through it.' },
@@ -212,11 +213,7 @@ const scheduledEvents = [
     triggerMinute: 30,
     oncePerLoop: true,
     effect: () => {
-      const stationMaster = state.npcs.find((npc) => npc.profile.key === 'stationMaster');
-      if (stationMaster) {
-        stationMaster.target = { x: 61, y: 8 };
-        if (stationMaster.x === 61 && stationMaster.y === 8) openStationDoor();
-      }
+      queueStationMasterDoorAction('open');
       writeLog('The station master checks the platform clock and starts toward the side-room door.');
     },
   },
@@ -225,11 +222,7 @@ const scheduledEvents = [
     triggerMinute: 75,
     oncePerLoop: true,
     effect: () => {
-      const stationMaster = state.npcs.find((npc) => npc.profile.key === 'stationMaster');
-      if (stationMaster) {
-        stationMaster.target = { x: 61, y: 8 };
-        if (stationMaster.x === 61 && stationMaster.y === 8) closeStationDoor();
-      }
+      queueStationMasterDoorAction('close');
       writeLog('The station master turns back toward the side-room door with the brass key ready.');
     },
   },
@@ -298,6 +291,7 @@ function resetLoop(message, { effect = true } = {}) {
     facing: [0, 1],
     seen: new Set(),
     npcs: [],
+    stationMasterScolding: false,
   };
   state.npcs = maps.station.npcs.map(createNpcState);
   if (effect) playResetEffect();
@@ -336,6 +330,7 @@ function tryMove(dx, dy) {
     return;
   }
   state.player = target;
+  if (tile.track) alertStationMasterToTrackTrespass();
   if (tile.stairs || tile.stairsUp || tile.stairsDown || tile.officeEntrance || tile.officeExit) useStairs(tile);
   const item = itemAt(target.x, target.y);
   const pickupMessage = item ? pickUpItem(item) : null;
@@ -468,6 +463,7 @@ function moveItem(itemId, position) {
 }
 
 function moveNpcs() {
+  updateStationMasterScoldingTarget();
   const occupied = new Set(state.npcs.map((npc) => `${npc.mapKey}:${positionKey(npc.x, npc.y)}`));
   const remarks = [];
 
@@ -481,6 +477,9 @@ function moveNpcs() {
     if (!step) return traveler;
 
     if (traveler.mapKey === state.currentMapKey && step.x === state.player.x && step.y === state.player.y) {
+      if (traveler.profile.key === 'stationMaster' && traveler.scoldingPlayer) {
+        return finishStationMasterScolding(traveler, remarks);
+      }
       remarks.push(npcBlockedRemark(traveler));
       return traveler;
     }
@@ -500,21 +499,67 @@ function moveNpcs() {
 
 function handleNpcArrival(npc) {
   if (npc.profile.key !== 'stationMaster' || npc.x !== 61 || npc.y !== 8) return;
-  if (elapsedMinutes() >= 75) {
-    closeStationDoor();
-    npc.target = { x: 54, y: 8 };
-    return;
-  }
-  if (elapsedMinutes() >= 30) {
-    openStationDoor();
-    npc.target = { x: 54, y: 8 };
-  }
+  performStationMasterDoorActions(npc);
+}
+
+
+function stationMaster() {
+  return state.npcs.find((npc) => npc.profile.key === 'stationMaster');
+}
+
+function alertStationMasterToTrackTrespass() {
+  if (state.currentMapKey !== 'station') return;
+  const master = stationMaster();
+  if (!master || master.scoldingPlayer) return;
+  master.scoldingPlayer = true;
+  master.preScoldTarget = { ...master.target };
+  master.target = { ...state.player };
+  state.stationMasterScolding = true;
+  writeLog('The station master spots you on the tracks and marches over to tell you off.');
+}
+
+function updateStationMasterScoldingTarget() {
+  const master = stationMaster();
+  if (!master?.scoldingPlayer) return;
+  if (state.currentMapKey === 'station') master.target = { ...state.player };
+}
+
+function finishStationMasterScolding(npc, remarks) {
+  remarks.push('The station master says, “Off the tracks! If I miss my duties because of this, I am doing them next.”');
+  const resumed = { ...npc, scoldingPlayer: false };
+  state.stationMasterScolding = false;
+  return resumeStationMasterDuties(resumed);
+}
+
+function queueStationMasterDoorAction(action) {
+  const master = stationMaster();
+  if (!master) return;
+  master.pendingDoorActions = [...(master.pendingDoorActions ?? []), action];
+  if (master.scoldingPlayer) return;
+  master.target = { x: 61, y: 8 };
+  if (master.x === 61 && master.y === 8) performStationMasterDoorActions(master);
+}
+
+function resumeStationMasterDuties(npc) {
+  if (npc.pendingDoorActions?.length) return { ...npc, target: { x: 61, y: 8 }, preScoldTarget: null };
+  return { ...npc, target: npc.preScoldTarget ?? npc.route[1] ?? npc.route[0], preScoldTarget: null };
+}
+
+function performStationMasterDoorActions(npc) {
+  const actions = npc.pendingDoorActions ?? [];
+  if (!actions.length) return;
+  actions.forEach((action) => {
+    if (action === 'open') openStationDoor();
+    if (action === 'close') closeStationDoor();
+  });
+  npc.pendingDoorActions = [];
+  npc.target = { x: 54, y: 8 };
 }
 
 function createNpcState(npc, index) {
   const profile = npcDefinitions.find((definition) => definition.key === npc.profileKey) ?? npcDefinitions[index % npcDefinitions.length];
   const route = createNpcRoute(npc, profile);
-  return { ...npc, profile, route, target: route[1] ?? route[0] };
+  return { ...npc, profile, route, target: route[1] ?? route[0], pendingDoorActions: [] };
 }
 
 function createNpcRoute(npc, profile) {
