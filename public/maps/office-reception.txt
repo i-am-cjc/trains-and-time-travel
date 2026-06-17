@@ -1,0 +1,10 @@
+; Office block ground floor reception
+; Legend: # wall, . floor, Q exit to station, ^ stairs up, N office NPC, r reception desk, p plant
+########
+#Q..p..#
+#..rr..#
+#......#
+#..N...#
+#......#
+#..p.^.#
+########
