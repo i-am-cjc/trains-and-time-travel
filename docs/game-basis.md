@@ -50,4 +50,4 @@ Lines beginning with `;` are comments. The loader pads short rows with walls, bu
 
 ## Rendering rules
 
-The renderer uses a simple line-of-sight check from the player. Unseen squares are black. Squares seen earlier in the current loop but currently outside line of sight are rendered with their saturation reduced to 10%.
+The renderer uses a simple line-of-sight check from the player. Unseen squares are black. Squares seen earlier in the current loop but currently outside line of sight are rendered with their saturation reduced to 10% and faded to 67% opacity.
