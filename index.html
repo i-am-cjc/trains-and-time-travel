@@ -15,7 +15,16 @@
       </header>
       <main id="game"></main>
       <div id="loop-effect" aria-hidden="true"></div>
-      <aside id="log" aria-live="polite" aria-label="Status history"></aside>
+      <aside id="side-pane" aria-label="Inventory and status history">
+        <section class="pane-section" aria-labelledby="inventory-heading">
+          <h2 id="inventory-heading">Inventory</h2>
+          <div id="inventory-list"></div>
+        </section>
+        <section class="pane-section" aria-labelledby="log-heading">
+          <h2 id="log-heading">Log</h2>
+          <div id="log" aria-live="polite" aria-label="Status history"></div>
+        </section>
+      </aside>
     </div>
     <script type="module" src="/src/main.js"></script>
   </body>
