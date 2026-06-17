@@ -24,9 +24,10 @@ const npcBlockedRemarks = [
 const terrain = {
   '#': { color: 0x38404d, blocks: true, description: 'A solid wall blocks the way.' },
   '.': { color: 0x656b72, blocks: false, description: 'Station paving.' },
-  '=': { color: 0x20242a, blocks: true, description: 'The train line blocks the northern edge of town.' },
+  '=': { color: 0x20242a, blocks: true, blocksView: false, description: 'The train line blocks the northern edge of town.' },
   'T': { color: 0x335f8f, blocks: false, blocksView: true, train: true, description: 'The waiting train. Step back aboard to end this loop.' },
   'D': { color: 0x9b6a3c, blocks: false, description: 'An open doorway.' },
+  'W': { color: 0x4f6f8c, blocks: true, blocksView: false, description: 'A glass window blocks the way, but you can see through it.' },
   '~': { color: 0x317345, blocks: false, description: 'A patch of grass.' },
   'B': { color: 0x80613a, blocks: false, interact: 'You sit for a minute and watch the station repeat itself.', description: 'A station bench.' },
   'C': { color: 0x8d99ae, blocks: true, blocksView: false, description: 'A parked car.' },
@@ -346,6 +347,13 @@ function drawSprite(x, y, sprite, visible, desaturated = false) {
     case 'D':
       g.rect(px + 6, py + 4, 20, 24).fill(tone(0x6f4724));
       g.circle(px + 21, py + 16, 2).fill(tone(0xf6c453));
+      break;
+    case 'W':
+      g.rect(px + 4, py + 5, 24, 22).fill(tone(0x3d4c5d));
+      g.rect(px + 7, py + 8, 18, 16).fill(tone(0x79d2ff));
+      g.rect(px + 15, py + 8, 2, 16).fill(tone(0xe8f8ff));
+      g.rect(px + 7, py + 15, 18, 2).fill(tone(0xe8f8ff));
+      g.rect(px + 9, py + 10, 5, 3).fill(tone(0xbfefff));
       break;
     case '~':
       g.moveTo(px + 5, py + 25).quadraticCurveTo(px + 9, py + 6, px + 13, py + 25).fill(tone(0x55a85e));
