@@ -42,7 +42,8 @@ Legend:
 | `C` | Parked car |
 | `S` | Shop |
 | `N` | Townsperson |
-| `M` | Station master NPC |
+| `M` | Station master NPC (unique: only one per map) |
+| `Z` | Police officer NPC (generic: multiple per map allowed) |
 | `B` | Bench |
 | `K` | Kiosk |
 | `A` | Announcement board |

@@ -104,13 +104,11 @@ export const npcDefinitions = [
   },
 ];
 
-export const npcProfileAssignments = {
-  // Optional map-coordinate overrides. Format: 'x,y': 'profileKey'.
-  '64,8': 'shopkeeper',
-  '34,15': 'commuter',
-  '14,22': 'tourist',
-  '50,7': 'police',
-  '56,7': 'police',
+export const npcMapSymbols = {
+  N: { defaultProfile: true },
+  M: { profileKey: 'stationMaster', uniquePerMap: true },
+  Z: { profileKey: 'police' },
+  J: { profileKey: 'policeGuard' },
 };
 
 export { npcBlockedRemarks };

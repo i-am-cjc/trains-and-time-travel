@@ -20,6 +20,7 @@ export const terrain = {
   'O': { color: 0xf8fafc, blocks: true, blocksView: false, interact: 'The station clock ticks once, but every hand points toward departure.', description: 'A round station clock.', readableTitle: 'Clock Face', readableText: ['A maintenance label reads: DO NOT WIND PAST THE END OF THE LOOP.', 'Tiny pencilled marks count more resets than you remember making.'] },
   'N': { color: 0xff8a65, blocks: true, blocksView: false, npc: true, interact: 'They mutter about catching the same train again.', description: 'A townsperson.' },
   'M': { color: 0x38bdf8, blocks: true, blocksView: false, npc: true, interact: 'The station master checks a brass key and the platform clock.', description: 'The station master.' },
+  'Z': { color: 0x1d4ed8, blocks: true, blocksView: false, npc: true, interact: 'The police officer keeps watch for trouble in the loop.', description: 'A police officer.' },
   'X': { color: 0x5b3418, blocks: true, blocksView: true, lockedDoor: true, interact: 'The station side-room door is locked tight.', description: 'A locked station side-room door.' },
   'U': { color: 0xa78bfa, blocks: false, blocksView: false, stairs: true, description: 'A narrow stairwell descends beneath the station.' },
   '^': { color: 0x22c55e, blocks: false, blocksView: false, stairsUp: true, description: 'Stairs marked with an upward arrow.' },
