@@ -2,7 +2,7 @@ import { Application, Container, Graphics } from 'pixi.js';
 import { directions, LOOP_MINUTES, MAP_URLS, MAX_LOG_ENTRIES, RESET_EFFECT_MS, SIGHT_RADIUS, TILE_SIZE } from './constants.js';
 import { createScheduledEvents } from './events.js';
 import { createItemDefinitions, placedItems } from './items.js';
-import { npcBlockedRemarks, npcDefinitions, npcProfileAssignments } from './npcs.js';
+import { npcBlockedRemarks, npcDefinitions, npcMapSymbols } from './npcs.js';
 import { terrain } from './terrain.js';
 import './styles.css';
 
@@ -122,9 +122,12 @@ async function loadMap(url, mapKey) {
   grid.forEach((row, y) => row.forEach((cell, x) => {
     if (cell === 'P') start = { x, y };
     if (cell === 'U' || cell === '^' || cell === 'v' || cell === 'E' || cell === 'Q') stairs.push({ x, y, type: cell });
-    if (cell === 'N' || cell === 'M' || cell === 'J') {
-      const profileKey = cell === 'M' ? 'stationMaster' : (cell === 'J' ? 'policeGuard' : npcProfileAssignments[positionKey(x, y)]);
-      npcs.push({ x, y, mapKey, profileKey });
+    const npcSymbol = npcMapSymbols[cell];
+    if (npcSymbol) {
+      if (npcSymbol.uniquePerMap && npcs.some((npc) => npc.mapSymbol === cell)) {
+        throw new Error(`${mapKey} contains more than one unique ${cell} NPC.`);
+      }
+      npcs.push({ x, y, mapKey, mapSymbol: cell, profileKey: npcSymbol.profileKey });
       grid[y][x] = '.';
     }
   }));
@@ -585,9 +588,14 @@ function performStationMasterDoorActions(npc) {
 }
 
 function createNpcState(npc, index) {
-  const profile = npcDefinitions.find((definition) => definition.key === npc.profileKey) ?? npcDefinitions[index % npcDefinitions.length];
+  const profile = npcDefinitions.find((definition) => definition.key === npc.profileKey) ?? genericNpcDefinitions()[index % genericNpcDefinitions().length];
   const route = createNpcRoute(npc, profile);
   return { ...npc, profile, route, target: route[1] ?? route[0], pendingDoorActions: [] };
+}
+
+function genericNpcDefinitions() {
+  const directlyMappedProfiles = new Set(Object.values(npcMapSymbols).map((symbol) => symbol.profileKey).filter(Boolean));
+  return npcDefinitions.filter((definition) => !directlyMappedProfiles.has(definition.key));
 }
 
 function createNpcRoute(npc, profile) {
@@ -744,7 +752,7 @@ function draw() {
     if (visible.has(`${car.x},${car.y}`)) drawSprite(car.x, car.y, car.sprite, true);
   });
   state.npcs.filter((npc) => npc.mapKey === state.currentMapKey).forEach((npc) => {
-    if (visible.has(`${npc.x},${npc.y}`)) drawSprite(npc.x, npc.y, npc.profile.key === 'stationMaster' ? 'M' : (npc.profile.key === 'police' || npc.profile.key === 'policeGuard' ? 'police' : 'N'), true);
+    if (visible.has(`${npc.x},${npc.y}`)) drawSprite(npc.x, npc.y, npcSprite(npc), true);
   });
   if (state.bullet?.path[state.bullet.index]) {
     const bullet = state.bullet.path[state.bullet.index];
@@ -765,6 +773,12 @@ function visibleDrawBounds() {
     minY: Math.max(0, state.player.y - halfTilesHigh),
     maxY: Math.min(map.height - 1, state.player.y + halfTilesHigh),
   };
+}
+
+function npcSprite(npc) {
+  if (npc.profile.key === 'stationMaster') return 'M';
+  if (npc.profile.key === 'police' || npc.profile.key === 'policeGuard') return 'police';
+  return 'N';
 }
 
 function drawItem(item, visible) {
