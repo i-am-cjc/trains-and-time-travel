@@ -366,18 +366,18 @@ function isTrainDoorCell(grid, x, y) {
 }
 
 function stationDoorTile() {
-  return tileAtFor('station', 94, 8);
+  return tileAtFor('station', STATION_DOOR_X, STATION_DOOR_Y);
 }
 
 function openStationDoor() {
   if (!stationDoorTile().lockedDoor) return;
-  setTileOverride('station', 94, 8, 'D');
+  setTileOverride('station', STATION_DOOR_X, STATION_DOOR_Y, 'D');
   writeLog('The station master unlocks the side-room door with a bright brass click.');
 }
 
 function closeStationDoor() {
   if (stationDoorTile().lockedDoor) return;
-  setTileOverride('station', 94, 8, 'X');
+  setTileOverride('station', STATION_DOOR_X, STATION_DOOR_Y, 'X');
   writeLog('The station master locks the side-room door again.');
   if (isPlayerInsideStationSideRoom()) {
     writeLog('You hear the lock turn somewhere above. You are still inside the station side room.');
@@ -509,8 +509,13 @@ function moveNpcs() {
   remarks.forEach((remark) => writeLog(remark));
 }
 
+const STATION_DOOR_X = 94;
+const STATION_DOOR_Y = 8;
+const STATION_MASTER_DOOR_ATTENDANCE_POINT = { x: STATION_DOOR_X - 1, y: STATION_DOOR_Y };
+
 function handleNpcArrival(npc) {
-  if (npc.profile.key !== 'stationMaster' || npc.x !== 61 || npc.y !== 8) return;
+  if (npc.profile.key !== 'stationMaster') return;
+  if (npc.x !== STATION_MASTER_DOOR_ATTENDANCE_POINT.x || npc.y !== STATION_MASTER_DOOR_ATTENDANCE_POINT.y) return;
   performStationMasterDoorActions(npc);
 }
 
@@ -571,12 +576,12 @@ function queueStationMasterDoorAction(action) {
   if (!master) return;
   master.pendingDoorActions = [...(master.pendingDoorActions ?? []), action];
   if (master.scoldingPlayer) return;
-  master.target = { x: 93, y: 8 };
-  if (master.x === 93 && master.y === 8) performStationMasterDoorActions(master);
+  master.target = { ...STATION_MASTER_DOOR_ATTENDANCE_POINT };
+  if (master.x === STATION_MASTER_DOOR_ATTENDANCE_POINT.x && master.y === STATION_MASTER_DOOR_ATTENDANCE_POINT.y) performStationMasterDoorActions(master);
 }
 
 function resumeStationMasterDuties(npc) {
-  if (npc.pendingDoorActions?.length) return { ...npc, target: { x: 93, y: 8 }, preScoldTarget: null };
+  if (npc.pendingDoorActions?.length) return { ...npc, target: { ...STATION_MASTER_DOOR_ATTENDANCE_POINT }, preScoldTarget: null };
   return { ...npc, target: npc.preScoldTarget ?? npc.route[1] ?? npc.route[0], preScoldTarget: null };
 }
 
