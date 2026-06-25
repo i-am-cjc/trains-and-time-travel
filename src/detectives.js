@@ -26,6 +26,7 @@ export function createDetectiveLogic({
   neighborsOf,
   closestPoint,
   positionKey,
+  carAtOnMap,
 }) {
   function updateDetectiveResponse() {
     const crimeScene = nextCrimeSceneNeedingDetective();
@@ -92,7 +93,7 @@ export function createDetectiveLogic({
   function deployPoliceResponder(car) {
     const state = getState();
     const spawnPoints = uniquePoints([car, ...neighborsOf(car), ...neighborsOf({ x: car.x + 1, y: car.y })])
-      .filter((point) => !tileAtFor(car.mapKey, point.x, point.y).blocks && !npcAtOnMap(car.mapKey, point.x, point.y));
+      .filter((point) => !tileAtFor(car.mapKey, point.x, point.y).blocks && !npcAtOnMap(car.mapKey, point.x, point.y) && !carAtOnMap(car.mapKey, point.x, point.y));
     const point = spawnPoints[0] ?? car;
     const scene = sceneById(car.sceneId);
     const trafficOfficer = scene?.roadTrafficBlock;
