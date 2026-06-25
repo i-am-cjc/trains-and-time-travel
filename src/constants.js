@@ -1,6 +1,4 @@
 export const TILE_SIZE = 32;
-export const LOOP_MINUTES = 600;
-export const POCKET_WATCH_BONUS_MINUTES = 30;
 export const SIGHT_RADIUS = 100;
 export const RESET_EFFECT_MS = 900;
 export const MAX_LOG_ENTRIES = 80;

@@ -59,7 +59,7 @@ export function createCleanupLogic({
     if (state.currentMapKey !== 'station') return false;
     const hitVan = cleanupVanAt(state.player.x, state.player.y);
     if (!hitVan) return false;
-    killPlayer('A cleanup van clips you while chasing the mess the loop left behind.');
+    killPlayer('A cleanup van clips you while chasing the mess left behind.');
     return true;
   }
 
@@ -75,7 +75,7 @@ export function createCleanupLogic({
     const moved = { ...van, ...step, targetHazard: { ...hazard } };
     if (manhattanDistance(moved, hazard) <= CLEANUP_VAN_RESPONSE_DISTANCE) {
       deployCleanupCrew(moved);
-      writeLog('The cleanup van parks nearby and four hazmat-suited cleaners step out with folding barriers and sealed bins.');
+      writeLog('The cleanup van parks nearby and four hazmat-suited cleaners step out with sealed bins and a cleanup sign.');
       return { ...moved, status: 'deployed' };
     }
     return moved;
@@ -99,7 +99,7 @@ export function createCleanupLogic({
       age: 29 + index,
       gender: index % 2 ? 'male' : 'female',
       role: 'cleanup responder',
-      goal: 'barrier off hazards, clean the affected tile, and return to the cleanup van',
+      goal: 'post a cleanup-in-progress sign, clean hazards, and return to the cleanup van',
       dialogue: cleanupDialogue(hazard),
       description: `A cleanup responder in a pale hazmat suit assigned to ${hazardLabel(hazard)}.`,
     };
@@ -117,36 +117,40 @@ export function createCleanupLogic({
         removeCleanupCrewAtVan(van);
         if (!state.npcs.some((npc) => npc.homeCleanupVanId === van.id)) {
           van.status = 'returning';
-          writeLog('The cleanup crew stows the last barrier and the van returns to the road.');
+          writeLog('The cleanup crew packs up the cleanup sign and the van returns to the road.');
         }
         return;
       }
 
       const workPoint = cleanupWorkPoint(hazard, crew[0] ?? van);
       crew.forEach((npc) => { npc.target = workPoint ?? { x: hazard.x, y: hazard.y }; });
-      placeNextBarrierTile(hazard);
+      placeCleanupSign(hazard);
       const adjacentCrew = crew.filter((npc) => npc.mapKey === hazard.mapKey && manhattanDistance(npc, hazard) <= 1);
       if (!adjacentCrew.length) return;
       hazard.cleaningTurns = (hazard.cleaningTurns ?? 0) + adjacentCrew.length;
       if (hazard.cleaningTurns < CLEANING_TURNS_REQUIRED) return;
       cleanHazard(hazard);
-      writeLog(`The hazmat crew seals and scrubs ${hazardLabel(hazard)}, then folds the visual barriers away.`);
+      writeLog(cleanupFinishedMessage(hazard));
     });
   }
 
-  function placeNextBarrierTile(hazard) {
+  function placeCleanupSign(hazard) {
     const state = getState();
-    if (!hazard.barrierPlan) hazard.barrierPlan = barrierPointsAround(hazard);
-    const existing = new Set(state.cleanupBarriers.map((barrier) => `${barrier.hazardId}:${positionKey(barrier.x, barrier.y)}`));
-    const nextPoint = hazard.barrierPlan.find((point) => !existing.has(`${hazard.id}:${positionKey(point.x, point.y)}`));
-    if (nextPoint) state.cleanupBarriers.push({ hazardId: hazard.id, mapKey: hazard.mapKey, ...nextPoint });
+    if (state.cleanupSigns.some((sign) => sign.hazardId === hazard.id)) return;
+    const point = cleanupWorkPoint(hazard, hazard) ?? hazard;
+    state.cleanupSigns.push({ hazardId: hazard.id, mapKey: hazard.mapKey, ...point });
   }
+
 
   function cleanHazard(hazard) {
     const state = getState();
     hazard.status = 'cleaned';
-    state.cleanupBarriers = state.cleanupBarriers.filter((barrier) => barrier.hazardId !== hazard.id);
-    state.ashPiles = state.ashPiles.filter((ash) => ash.id !== hazard.sourceId);
+    state.cleanupSigns = state.cleanupSigns.filter((sign) => sign.hazardId !== hazard.id);
+    if (hazard.type === 'ash') {
+      cleanAllAshPiles(hazard.mapKey);
+    } else {
+      state.ashPiles = state.ashPiles.filter((ash) => ash.id !== hazard.sourceId);
+    }
     state.bloodPatches = state.bloodPatches.filter((blood) => blood.id !== hazard.sourceId);
     if (hazard.type === 'corpse') {
       const scene = state.crimeScenes.find((candidate) => candidate.corpseId === hazard.sourceId);
@@ -187,7 +191,9 @@ export function createCleanupLogic({
 
   function nextWaitingHazard() {
     const state = getState();
-    return state.hazardPoints.find((hazard) => hazard.status === 'waitingCleanup' && respondersFinished(hazard)) ?? null;
+    return state.hazardPoints.find((hazard) => hazard.type === 'ash' && hazard.status === 'waitingCleanup' && respondersFinished(hazard))
+      ?? state.hazardPoints.find((hazard) => hazard.status === 'waitingCleanup' && respondersFinished(hazard))
+      ?? null;
   }
 
   function respondersFinished(hazard) {
@@ -207,8 +213,22 @@ export function createCleanupLogic({
     return closestPoint(cleaner, neighborsOf(hazard).filter((point) => !tileAtFor(hazard.mapKey, point.x, point.y).blocks)) ?? hazard;
   }
 
-  function barrierPointsAround(point) {
-    return neighborsOf(point).filter((candidate) => !tileAtFor(point.mapKey, candidate.x, candidate.y).blocks);
+  function cleanAllAshPiles(mapKey) {
+    const state = getState();
+    const ashIds = new Set(state.ashPiles.filter((ash) => ash.mapKey === mapKey).map((ash) => ash.id));
+    state.ashPiles = state.ashPiles.filter((ash) => ash.mapKey !== mapKey);
+    state.hazardPoints.forEach((candidate) => {
+      if (candidate.type === 'ash' && ashIds.has(candidate.sourceId)) candidate.status = 'cleaned';
+    });
+    state.cleanupSigns = state.cleanupSigns.filter((sign) => {
+      const signHazard = state.hazardPoints.find((candidate) => candidate.id === sign.hazardId);
+      return signHazard?.type !== 'ash' || signHazard.mapKey !== mapKey;
+    });
+  }
+
+  function cleanupFinishedMessage(hazard) {
+    if (hazard.type === 'ash') return 'The hazmat crew posts one cleanup sign, sweeps every ash pile from the area, then carries the sign away.';
+    return `The hazmat crew seals and scrubs ${hazardLabel(hazard)}, then carries the cleanup sign away.`;
   }
 
   function moveCleanupVanBackToRoad(van) {
@@ -232,10 +252,10 @@ function cleanupDialogue(hazard) {
   const repeated = hazard.playerIncidentCount > 1;
   const repeatLine = repeated ? 'The cleaner says, “Same coordinates, same traveler-shaped problem. We are adding this to your file.”' : null;
   const byType = {
-    ash: 'The cleaner says, “Ash gets everywhere in a loop. Hold still unless you want to be catalogued.”',
+    ash: 'The cleaner says, “Ash gets everywhere. One sign, one sweep, then the area is clear.”',
     blood: 'The cleaner says, “Biohazard protocol. Do not step in the evidence, or what used to be evidence.”',
     corpse: 'The cleaner says, “Body is gone, but the tile remembers. We make it forget safely.”',
-    'blocked-traffic': 'The cleaner says, “High-traffic obstruction. Visual barriers only, but people still behave around cones.”',
+    'blocked-traffic': 'The cleaner says, “High-traffic obstruction. We post one sign, clear it, and move on.”',
   };
   return [repeatLine, byType[hazard.type] ?? 'The cleaner says, “Contain, clean, confirm, leave.”'].filter(Boolean);
 }

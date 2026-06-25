@@ -1,5 +1,5 @@
 import { Application, Container, Graphics } from 'pixi.js';
-import { directions, LOOP_MINUTES, MAP_URLS, MAX_LOG_ENTRIES, RESET_EFFECT_MS, SIGHT_RADIUS, TILE_SIZE } from './constants.js';
+import { directions, MAP_URLS, MAX_LOG_ENTRIES, RESET_EFFECT_MS, SIGHT_RADIUS, TILE_SIZE } from './constants.js';
 import { createScheduledEvents } from './events.js';
 import { createItemDefinitions, placedItems } from './items.js';
 import { npcBlockedRemarks, npcDefinitions, npcMapSymbols } from './npcs.js';
@@ -29,7 +29,7 @@ const CAR_SPAWN_MINUTES = 5;
 const CAR_SPAWN_MAX_MINUTES = 15;
 const NPC_ROAD_PATH_COST = 20;
 
-const itemDefinitions = createItemDefinitions({ addLoopMinutes, fireGun, igniteFire, writeLog, draw });
+const itemDefinitions = createItemDefinitions({ resetRun: resetLoop, fireGun, igniteFire, writeLog, draw });
 const scheduledEvents = createScheduledEvents({ updateTerrain, moveItem, writeLog, queueStationMasterDoorAction });
 let updateFireResponse;
 let moveFireEngines;
@@ -127,7 +127,7 @@ const maps = Object.fromEntries(await Promise.all(
   positionKey,
 }));
 let map = maps.station;
-resetLoop('The doors hiss open. You step onto the platform with two hours before everything resets.', { effect: false });
+resetLoop('The doors hiss open. You step onto the platform. Survive as long as you can, then use the stopwatch when you want to reset.', { effect: false });
 
 window.addEventListener('keydown', (event) => {
   if (inspectMode) return;
@@ -169,8 +169,7 @@ function resetLoop(message, { effect = true } = {}) {
   map = maps.station;
   state = {
     player: { ...map.start },
-    minutesLeft: LOOP_MINUTES,
-    loopLimit: LOOP_MINUTES,
+    minutesElapsed: 0,
     inventory: [],
     items: placedItems.map((item) => ({ ...item })),
     terrainOverrides: {},
@@ -196,7 +195,7 @@ function resetLoop(message, { effect = true } = {}) {
     nextCrimeSceneId: 0,
     chalkOutlines: [],
     barriers: [],
-    cleanupBarriers: [],
+    cleanupSigns: [],
     bloodPatches: [],
     hazardPoints: [],
     nextHazardId: 0,
@@ -294,10 +293,10 @@ function tryMove(dx, dy) {
   const target = { x: state.player.x + dx, y: state.player.y + dy };
   const occupant = npcAt(target.x, target.y);
   if (occupant) return spendMinute(npcDialogue(occupant));
-  if (carAt(target.x, target.y)) return killPlayer('You step into the road and a car hits you before the loop can blink.');
+  if (carAt(target.x, target.y)) return killPlayer('You step into the road and a car hits you before you can react.');
   const tile = tileAt(target.x, target.y);
   if (state.arrested && !isInsideLockedJailCell(target)) {
-    writeLog('The cell door is locked. You can pace the cell, but you cannot leave before the loop ends.');
+    writeLog('The cell door is locked. You can pace the cell, but you cannot leave this run unless you reset.');
     return;
   }
   if (tile.blocks) {
@@ -305,7 +304,6 @@ function tryMove(dx, dy) {
     return;
   }
   const enteringTrainDoor = isTrainDoor(target.x, target.y);
-  const shouldTriggerLoop = enteringTrainDoor && state.hasCrossedTrainDoor;
   state.player = target;
   closeReadableOverlay();
   if (enteringTrainDoor && !state.hasCrossedTrainDoor) state.hasCrossedTrainDoor = true;
@@ -314,10 +312,9 @@ function tryMove(dx, dy) {
   const item = itemAt(target.x, target.y);
   const pickupMessage = item ? pickUpItem(item) : null;
   const trainDoorMessage = enteringTrainDoor
-    ? (shouldTriggerLoop ? 'You step back through the train door and deliberately end the loop.' : 'You cross the train door onto the platform. Returning through it will end this loop.')
+    ? 'You cross the train door onto the platform. The run keeps going until you choose to reset it.'
     : null;
   spendMinute(pickupMessage ?? trainDoorMessage);
-  if (shouldTriggerLoop) resetLoop('The train pulls away, then arrives again. The loop begins from the platform.');
 }
 
 function isInsideLockedJailCell(point) {
@@ -340,7 +337,7 @@ function interact() {
 
 function spendMinute(message) {
   state.fireEngineDispatchedThisTurn = false;
-  state.minutesLeft -= 1;
+  state.minutesElapsed += 1;
   runScheduledEvents();
   updateFireResponse();
   updateAmbulanceResponse();
@@ -359,7 +356,6 @@ function spendMinute(message) {
   if (movePoliceCars()) return;
   if (moveCleanupVans()) return;
   if (moveCars()) return;
-  if (state.minutesLeft <= 0) return resetLoop('The two-hour loop expires. Everything snaps back to the moment you arrived.');
   draw();
   if (message) writeLog(message);
 }
@@ -421,7 +417,7 @@ function moveCars() {
   if (state.currentMapKey !== 'station') return false;
   const hitCar = carAt(state.player.x, state.player.y);
   if (!hitCar) return false;
-  killPlayer('A car barrels down the road and knocks you out of the loop.');
+  killPlayer('A car barrels down the road and ends your run.');
   return true;
 }
 
@@ -439,7 +435,7 @@ function killNpc(npc, cause = 'is struck by a passing car and killed') {
   writeLog(`${npc.profile.name} ${cause}.`);
   if (npc.profile.key === 'stationMaster') {
     state.stationMasterScolding = false;
-    writeLog('Without the station master, the brass-key door will not be tended this loop.');
+    writeLog('Without the station master, the brass-key door will not be tended this run.');
   }
 }
 
@@ -506,7 +502,7 @@ function updateFires() {
   extinguishAdjacentFires();
   killNpcsCaughtInFire();
   if (isFireAt(state.currentMapKey, state.player.x, state.player.y)) {
-    killPlayer('Flames catch you before the loop can cool.');
+    killPlayer('Flames catch you and end your run.');
     return true;
   }
 
@@ -520,7 +516,7 @@ function updateFires() {
   if (nextFire) addFire(nextFire.mapKey, nextFire.x, nextFire.y);
   killNpcsCaughtInFire();
   if (isFireAt(state.currentMapKey, state.player.x, state.player.y)) {
-    killPlayer('The spreading fire overtakes you. The loop snaps back through smoke.');
+    killPlayer('The spreading fire overtakes you. Smoke swallows the run.');
     return true;
   }
   return false;
@@ -650,7 +646,7 @@ function arrestPlayer() {
   closeReadableOverlay();
   renderInventory();
   draw();
-  writeLog('The police arrest you and lock you in a station cell. Time keeps moving, but you cannot leave before the loop ends.');
+  writeLog('The police arrest you and lock you in a station cell. Time keeps moving, but you cannot leave unless you reset.');
 }
 
 function killPlayer(message) {
@@ -712,12 +708,12 @@ function isPlayerInsideStationSideRoom() {
 
 function useStairs(tile) {
   if (state.arrested) {
-    writeLog('The cell door is locked. The loop clock keeps ticking without you.');
+    writeLog('The cell door is locked. Time keeps ticking without you.');
     return;
   }
   if (tile.officeEntrance) {
     movePlayerToMapStairs('officeReception', 'Q');
-    writeLog('You step into the office block reception, where the workday loops in miniature.');
+    writeLog('You step into the office block reception, where the workday repeats in miniature.');
     return;
   }
 
@@ -766,11 +762,6 @@ function movePlayerToMapStairs(mapKey, stairType) {
   map = maps[mapKey];
   const destination = map.stairs.find((stair) => stair.type === stairType) ?? map.stairs[0] ?? map.start;
   state.player = { x: destination.x, y: destination.y };
-}
-
-function addLoopMinutes(minutes) {
-  state.minutesLeft += minutes;
-  state.loopLimit += minutes;
 }
 
 function updateTerrain(tileType, changes) {
@@ -1180,8 +1171,8 @@ function draw() {
   state.barriers.filter((barrier) => barrier.mapKey === state.currentMapKey).forEach((barrier) => {
     if (visible.has(`${barrier.x},${barrier.y}`)) drawSprite(barrier.x, barrier.y, 'barrier', true);
   });
-  state.cleanupBarriers.filter((barrier) => barrier.mapKey === state.currentMapKey).forEach((barrier) => {
-    if (visible.has(`${barrier.x},${barrier.y}`)) drawSprite(barrier.x, barrier.y, 'cleanupBarrier', true);
+  state.cleanupSigns.filter((sign) => sign.mapKey === state.currentMapKey).forEach((sign) => {
+    if (visible.has(`${sign.x},${sign.y}`)) drawSprite(sign.x, sign.y, 'cleanupSign', true);
   });
   state.bloodPatches.filter((blood) => blood.mapKey === state.currentMapKey).forEach((blood) => {
     if (visible.has(`${blood.x},${blood.y}`)) drawSprite(blood.x, blood.y, 'blood', true);
@@ -1220,7 +1211,7 @@ function draw() {
   drawSprite(state.player.x, state.player.y, state.shootingMode ? 'playerGun' : 'player', true);
   world.x = Math.round(app.screen.width / 2 - (state.player.x + 0.5) * TILE_SIZE);
   world.y = Math.round(app.screen.height / 2 - (state.player.y + 0.5) * TILE_SIZE);
-  hud.textContent = `Loop ${loopCount} · Minute ${elapsedMinutes()} / ${state.loopLimit} · ${state.minutesLeft} min left`;
+  hud.textContent = `Run ${loopCount} · Minute ${elapsedMinutes()}`;
 }
 
 function visibleDrawBounds() {
@@ -1501,11 +1492,12 @@ function drawSprite(x, y, sprite, visible, desaturated = false, alpha = 1) {
       g.ellipse(px + 16, py + 20, 11, 5).stroke({ color: tone(0xf8fafc), width: 2 });
       g.circle(px + 8, py + 18, 4).stroke({ color: tone(0xf8fafc), width: 2 });
       break;
-    case 'cleanupBarrier':
-      g.rect(px + 4, py + 14, 24, 3).fill(tone(0xa3e635));
-      g.rect(px + 4, py + 19, 24, 3).fill(tone(0xa3e635));
-      g.rect(px + 7, py + 13, 3, 10).fill(tone(0xf8fafc));
-      g.rect(px + 22, py + 13, 3, 10).fill(tone(0xf8fafc));
+    case 'cleanupSign':
+      g.rect(px + 6, py + 8, 20, 14).fill(tone(0xa3e635));
+      g.rect(px + 9, py + 11, 14, 2).fill(tone(0x111827));
+      g.rect(px + 9, py + 15, 14, 2).fill(tone(0x111827));
+      g.rect(px + 15, py + 22, 2, 8).fill(tone(0xf8fafc));
+      g.rect(px + 9, py + 29, 14, 2).fill(tone(0xf8fafc));
       break;
     case 'barrier':
       g.rect(px + 3, py + 12, 26, 4).fill(tone(0xfacc15));
@@ -1663,7 +1655,7 @@ function baseColorFor(sprite) {
   if (sprite === 'bullet') return 0x000000;
   if (sprite === 'fire') return 0x451a03;
   if (sprite === 'ashPile') return 0x292524;
-  if (sprite === 'corpse' || sprite === 'chalkOutline' || sprite === 'barrier' || sprite === 'cleanupBarrier') return 0x000000;
+  if (sprite === 'corpse' || sprite === 'chalkOutline' || sprite === 'barrier' || sprite === 'cleanupSign') return 0x000000;
   if (sprite === 'trainDoor') return 0x102338;
   if (sprite === 'carLeft' || sprite === 'carRight' || sprite === 'fireEngine' || sprite === 'ambulance' || sprite === 'policeCar' || sprite === 'cleanupVan') return 0x1f2933;
   if (sprite === 'firefighter') return 0x7c2d12;
@@ -1831,7 +1823,7 @@ function gunfireReactionSummary(excludedNpc = null) {
 function finishBullet(shot) {
   state.bullet = null;
   if (!shot.hitNpc) {
-    writeLog(`The gunshot cracks through the loop. ${gunfireReactionSummary()}`);
+    writeLog(`The gunshot cracks through the station. ${gunfireReactionSummary()}`);
     draw();
     return;
   }
@@ -1886,7 +1878,7 @@ function showReadableOverlay(tile) {
 function writeLog(message) {
   const entry = document.createElement('p');
   const timestamp = document.createElement('time');
-  timestamp.textContent = `[Loop ${loopCount}, minute ${elapsedMinutes()}]`;
+  timestamp.textContent = `[Run ${loopCount}, minute ${elapsedMinutes()}]`;
   entry.append(timestamp, ` ${message}`);
   log.appendChild(entry);
   while (log.children.length > MAX_LOG_ENTRIES) log.firstElementChild.remove();
@@ -1894,7 +1886,7 @@ function writeLog(message) {
 }
 
 function elapsedMinutes() {
-  return state.loopLimit - state.minutesLeft;
+  return state.minutesElapsed;
 }
 
 function playResetEffect() {
