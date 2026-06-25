@@ -2,6 +2,7 @@ const POLICE_CAR_RESPONSE_DISTANCE = 3;
 const POLICE_CAR_SPAWN_X = 72;
 const POLICE_CAR_ROAD_Y = 31;
 export const DETECTIVE_RESPONSE_DELAY_MINUTES = 5;
+const ROAD_TRAFFIC_SCENE_CLEAR_DELAY_MINUTES = 20;
 
 export function isDetective(npc) {
   return npc.profile.role === 'detective';
@@ -103,8 +104,8 @@ export function createDetectiveLogic({
       age: 41,
       gender: 'female',
       role: 'road traffic officer',
-      goal: 'block the road until the ambulance removes the person',
-      dialogue: ['The traffic officer says, “Road is closed. Cars can wait until the next loop.”'],
+      goal: 'block the road until twenty minutes after the ambulance removes the person',
+      dialogue: ['The traffic officer says, “Road is closed. Cars can wait until the scene is clear.”'],
     } : {
       key: `detective-${car.id}`,
       name: 'Detective Hal Ward',
@@ -150,16 +151,28 @@ export function createDetectiveLogic({
     if (!state.barriers.some((barrier) => barrier.sceneId === scene.id && barrier.trafficBlock)) {
       state.barriers.push(...trafficBarrierPoints(scene));
     }
+    const workPoint = trafficOfficerWorkPoint(scene, officer) ?? { x: scene.x, y: scene.y };
     if (scene.status !== 'bodyCollected') {
-      officer.target = trafficOfficerWorkPoint(scene, officer) ?? { x: scene.x, y: scene.y };
+      officer.target = workPoint;
       return;
     }
+    if (scene.trafficClearMinute === null || scene.trafficClearMinute === undefined) {
+      scene.trafficClearMinute = getElapsedMinutes() + ROAD_TRAFFIC_SCENE_CLEAR_DELAY_MINUTES;
+      writeLog('The body is removed, but the road traffic officer keeps the closure for twenty more minutes while the scene is made safe.');
+    }
+    if (getElapsedMinutes() < scene.trafficClearMinute) {
+      officer.target = workPoint;
+      return;
+    }
+    state.barriers = state.barriers.filter((barrier) => barrier.sceneId !== scene.id);
+    const blockedTrafficHazard = state.hazardPoints.find((hazard) => hazard.sourceId === scene.corpseId && hazard.type === 'blocked-traffic');
+    if (blockedTrafficHazard) blockedTrafficHazard.markedClear = true;
     scene.status = 'secured';
     officer.target = { x: car.x, y: car.y };
     removeDetectivesAtPoliceCar(car);
     if (!state.npcs.some((npc) => npc.homePoliceCarId === car.id)) {
       car.status = 'returning';
-      writeLog('The road traffic officer leaves the barriers in place and returns to the police car.');
+      writeLog('The road traffic officer clears the barriers and traffic starts moving again.');
     }
   }
 
@@ -201,7 +214,7 @@ export function createDetectiveLogic({
     const state = getState();
     const car = state.policeCars.find((candidate) => candidate.id === npc.homePoliceCarId);
     const scene = sceneById(npc.assignedSceneId);
-    if (scene?.roadTrafficBlock && scene.status !== 'bodyCollected') {
+    if (scene?.roadTrafficBlock && scene.status !== 'secured') {
       const workPoint = trafficOfficerWorkPoint(scene, npc);
       if (workPoint) return nextStepToward({ ...npc, target: workPoint }, occupied, { avoidFire: false }) ?? null;
     }
