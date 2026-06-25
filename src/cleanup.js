@@ -198,12 +198,13 @@ export function createCleanupLogic({
 
   function respondersFinished(hazard) {
     const state = getState();
-    const fireDone = !state.fires.some((fire) => fire.mapKey === hazard.mapKey)
-      && (hazard.type === 'ash'
-        || !state.fireEngines.some((engine) => engine.mapKey === hazard.mapKey && engine.status !== 'leaving'));
+    const fireDone = !state.fires.some((fire) => fire.mapKey === hazard.mapKey);
+    if (hazard.type === 'ash') return fireDone;
+
+    const fireRespondersDone = !state.fireEngines.some((engine) => engine.mapKey === hazard.mapKey && engine.status !== 'leaving');
     const ambulanceDone = !state.ambulances.some((ambulance) => ambulance.mapKey === hazard.mapKey && ambulance.status !== 'leaving');
     const policeDone = !state.policeCars.some((car) => car.mapKey === hazard.mapKey && car.status !== 'leaving');
-    return fireDone && ambulanceDone && policeDone;
+    return fireDone && fireRespondersDone && ambulanceDone && policeDone;
   }
 
   function hazardById(hazardId) {

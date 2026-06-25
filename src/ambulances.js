@@ -21,6 +21,7 @@ export function createAmbulanceLogic({
   closestPoint,
   positionKey,
   onCorpseCollected,
+  onAmbulanceDispatched,
 }) {
   function updateAmbulanceResponse() {
     const state = getState();
@@ -46,6 +47,7 @@ export function createAmbulanceLogic({
     };
     state.nextAmbulanceId += 1;
     state.ambulances.push(ambulance);
+    onAmbulanceDispatched(corpse);
     writeLog('An ambulance siren rises from the road and speeds toward the body.');
   }
 
