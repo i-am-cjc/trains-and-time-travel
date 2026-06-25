@@ -5,7 +5,7 @@ import { createItemDefinitions, placedItems } from './items.js';
 import { npcBlockedRemarks, npcDefinitions, npcMapSymbols } from './npcs.js';
 import { createFirefighterLogic, canExtinguishFire, isFirefighter } from './firefighters.js';
 import { createAmbulanceLogic, isParamedic } from './ambulances.js';
-import { createDetectiveLogic, DETECTIVE_RESPONSE_DELAY_MINUTES, isDetective } from './detectives.js';
+import { createDetectiveLogic, DETECTIVE_RESPONSE_DELAY_MINUTES, isPoliceResponder } from './detectives.js';
 import { createCleanupLogic, isCleanupResponder } from './cleanup.js';
 import { terrain } from './terrain.js';
 import './styles.css';
@@ -428,11 +428,11 @@ function killNpcsHitByCars() {
 
   const victimKeys = new Set(victims.map((npc) => `${npc.mapKey}:${positionKey(npc.x, npc.y)}`));
   state.npcs = state.npcs.filter((npc) => !victimKeys.has(`${npc.mapKey}:${positionKey(npc.x, npc.y)}`));
-  victims.forEach((npc) => killNpc(npc));
+  victims.forEach((npc) => killNpc(npc, 'is struck by a passing car and killed', { roadTrafficBlock: true }));
 }
 
-function killNpc(npc, cause = 'is struck by a passing car and killed') {
-  leaveCorpse(npc);
+function killNpc(npc, cause = 'is struck by a passing car and killed', options = {}) {
+  leaveCorpse(npc, options);
   writeLog(`${npc.profile.name} ${cause}.`);
   if (npc.profile.key === 'stationMaster') {
     state.stationMasterScolding = false;
@@ -442,6 +442,8 @@ function killNpc(npc, cause = 'is struck by a passing car and killed') {
 
 function isCarBlockedByTrafficJam(car, jammedCarIds = new Set()) {
   const nextX = car.x + car.dx;
+  if (tileAtFor(car.mapKey, nextX, car.y).trafficBlocked) return true;
+
   const roadBlockingEngine = state.fireEngines.find((engine) => (
     engine.mapKey === car.mapKey
     && engine.dx === car.dx
@@ -599,7 +601,7 @@ function uniqueFirePoints(points) {
   });
 }
 
-function leaveCorpse(npc) {
+function leaveCorpse(npc, { roadTrafficBlock = false } = {}) {
   state.playerIncidentCount += 1;
   const corpse = {
     id: `corpse-${state.nextCorpseId}`,
@@ -613,7 +615,7 @@ function leaveCorpse(npc) {
   addBloodPatch(corpse);
   trackHazardPoint('corpse', corpse);
   if (tileAtFor(corpse.mapKey, corpse.x, corpse.y).road) trackHazardPoint('blocked-traffic', corpse);
-  const scene = { id: `crime-scene-${state.nextCrimeSceneId}`, corpseId: corpse.id, mapKey: corpse.mapKey, x: corpse.x, y: corpse.y, status: 'awaitingAmbulance', detectiveDispatchMinute: null };
+  const scene = { id: `crime-scene-${state.nextCrimeSceneId}`, corpseId: corpse.id, mapKey: corpse.mapKey, x: corpse.x, y: corpse.y, status: 'awaitingAmbulance', detectiveDispatchMinute: null, roadTrafficBlock: roadTrafficBlock && tileAtFor(corpse.mapKey, corpse.x, corpse.y).road };
   state.nextCrimeSceneId += 1;
   state.crimeScenes.push(scene);
 }
@@ -1032,7 +1034,7 @@ function chooseNextNpcTarget(npc) {
 
 function nextNpcStep(npc, occupied) {
   if (isParamedic(npc)) return nextParamedicStep(npc, occupied) ?? nextStepToward(npc, occupied);
-  if (isDetective(npc)) return nextDetectiveStep(npc, occupied) ?? nextStepToward(npc, occupied);
+  if (isPoliceResponder(npc)) return nextDetectiveStep(npc, occupied) ?? nextStepToward(npc, occupied);
   if (isCleanupResponder(npc)) return nextCleanupStep(npc, occupied) ?? nextStepToward(npc, occupied);
   if (isFirefighter(npc) && state.fires.some((fire) => fire.mapKey === npc.mapKey)) {
     return nextFirefighterStep(npc, occupied) ?? nextStepToward(npc, occupied);
@@ -1234,7 +1236,7 @@ function npcSprite(npc) {
   if (isFirefighter(npc)) return 'firefighter';
   if (isParamedic(npc)) return 'paramedic';
   if (isCleanupResponder(npc)) return 'cleanupResponder';
-  if (isDetective(npc)) return 'detective';
+  if (isPoliceResponder(npc)) return npc.profile.role === 'road traffic officer' ? 'police' : 'detective';
   if (isLawEnforcement(npc)) return 'police';
   if (npc.profile.key === 'homelessPerson') return 'homeless';
   return `npc-${npc.profile.key}`;
@@ -1721,8 +1723,9 @@ function tileAtFor(mapKey, x, y) {
   const baseTile = terrain[tileType] ?? terrain[' '];
   const overrideTerrain = state?.terrainOverrides[tileType];
   const tile = overrideTerrain ? { ...baseTile, ...overrideTerrain } : baseTile;
-  if (state?.barriers?.some((barrier) => barrier.mapKey === mapKey && barrier.x === x && barrier.y === y)) {
-    return { ...tile, blocks: false, blocksView: false, description: 'A police barrier marks the taped-off crime scene, but you can squeeze past.' };
+  const barrier = state?.barriers?.find((candidate) => candidate.mapKey === mapKey && candidate.x === x && candidate.y === y);
+  if (barrier) {
+    return { ...tile, blocks: false, blocksView: false, trafficBlocked: Boolean(barrier.trafficBlock), description: barrier.trafficBlock ? 'A traffic barrier closes the road. Pedestrians can squeeze past, but cars must queue.' : 'A police barrier marks the taped-off crime scene, but you can squeeze past.' };
   }
   return tile;
 }
