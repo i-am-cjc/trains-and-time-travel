@@ -1,6 +1,7 @@
 const RECOVERY_WAGON_SPAWN_X = 0;
 const RECOVERY_WAGON_ROAD_Y = 30;
 const RECOVERY_DISTANCE = 1;
+const RECOVERY_WAGON_DISPATCH_INTERVAL_MINUTES = 3;
 
 export function createRecoveryWagonLogic({
   getState,
@@ -17,7 +18,7 @@ export function createRecoveryWagonLogic({
     const wreck = nextWaitingWreck();
     if (!wreck) return;
     if (state.recoveryWagons.some((wagon) => wagon.wreckId === wreck.id && wagon.status !== 'leaving')) return;
-    if (state.recoveryWagons.some((wagon) => wagon.status === 'responding')) return;
+    if (state.minutesElapsed < state.nextRecoveryWagonDispatchMinute) return;
     dispatchRecoveryWagon(wreck);
   }
 
@@ -35,6 +36,7 @@ export function createRecoveryWagonLogic({
       targetWreck: { ...wreck },
     });
     state.nextRecoveryWagonId += 1;
+    state.nextRecoveryWagonDispatchMinute = state.minutesElapsed + RECOVERY_WAGON_DISPATCH_INTERVAL_MINUTES;
     wreck.status = 'recoveryDispatched';
     writeLog('A recovery wagon rattles in from the left, routing around live traffic toward the burnt-out wreck.');
   }
