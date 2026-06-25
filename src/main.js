@@ -7,6 +7,7 @@ import { createFirefighterLogic, canExtinguishFire, isFirefighter } from './fire
 import { createAmbulanceLogic, isParamedic } from './ambulances.js';
 import { createDetectiveLogic, DETECTIVE_RESPONSE_DELAY_MINUTES, isPoliceResponder } from './detectives.js';
 import { createCleanupLogic, isCleanupResponder } from './cleanup.js';
+import { createRecoveryWagonLogic } from './recovery-wagons.js';
 import { terrain } from './terrain.js';
 import './styles.css';
 
@@ -55,6 +56,9 @@ let updateCleanupWork;
 let returningCleanupVanFor;
 let cleanupVanAt;
 let nextCleanupStep;
+let updateRecoveryResponse;
+let moveRecoveryWagons;
+let recoveryWagonAt;
 
 await app.init({ background: '#000000', resizeTo: document.querySelector('#game'), antialias: false });
 document.querySelector('#game').appendChild(app.canvas);
@@ -132,6 +136,17 @@ const maps = Object.fromEntries(await Promise.all(
   positionKey,
   carAtOnMap,
 }));
+
+({ updateRecoveryResponse, moveRecoveryWagons, recoveryWagonAt } = createRecoveryWagonLogic({
+  getState: () => state,
+  maps,
+  writeLog,
+  killPlayer,
+  nextVehicleStepToward,
+  manhattanDistance,
+  tileAtFor,
+  closestPoint,
+}));
 let map = maps.station;
 resetLoop('The doors hiss open. You step onto the platform. Survive as long as you can, then use the stopwatch when you want to reset.', { effect: false });
 
@@ -187,6 +202,10 @@ function resetLoop(message, { effect = true } = {}) {
     npcs: [],
     cars: [],
     nextCarId: 0,
+    wrecks: [],
+    nextWreckId: 0,
+    recoveryWagons: [],
+    nextRecoveryWagonId: 0,
     fireEngines: [],
     nextFireEngineId: 0,
     ambulances: [],
@@ -301,6 +320,8 @@ function tryMove(dx, dy) {
   const occupant = npcAt(target.x, target.y);
   if (occupant) return spendMinute(npcDialogue(occupant));
   if (carAt(target.x, target.y)) return killPlayer('You step into the road and a car hits you before you can react.');
+  if (wreckAt(target.x, target.y)) return spendMinute('The burnt-out wreck blocks the lane until a recovery wagon clears it.');
+  if (recoveryWagonAt(target.x, target.y)) return killPlayer('You step in front of the recovery wagon and the loop goes black.');
   const tile = tileAt(target.x, target.y);
   if (state.arrested && !isInsideLockedJailCell(target)) {
     writeLog('The cell door is locked. You can pace the cell, but you cannot leave this run unless you reset.');
@@ -350,6 +371,7 @@ function spendMinute(message) {
   updateAmbulanceResponse();
   updateDetectiveResponse();
   updateCleanupResponse();
+  updateRecoveryResponse();
   updateFireTargets();
   updateParamedicCollection();
   updateDetectiveSceneWork();
@@ -358,11 +380,13 @@ function spendMinute(message) {
   updateGunfirePanicTimer();
   if (updateFires()) return;
   updateCleanupResponse();
+  updateRecoveryResponse();
   updateFireResponse();
   if (moveFireEngines()) return;
   if (moveAmbulances()) return;
   if (movePoliceCars()) return;
   if (moveCleanupVans()) return;
+  if (moveRecoveryWagons()) return;
   if (moveCars()) return;
   draw();
   if (message) writeLog(message);
@@ -408,6 +432,8 @@ function nextCarSpawnDelay() {
 }
 
 function moveCars() {
+  burnCarsTouchingFire();
+  updateRecoveryResponse();
   updateCarSpawns();
   const jammed = new Set();
   state.cars = state.cars
@@ -420,6 +446,8 @@ function moveCars() {
     })
     .filter((car) => car.x >= 0 && car.x < maps[car.mapKey].width);
 
+  burnCarsTouchingFire();
+  updateRecoveryResponse();
   killNpcsHitByCars();
 
   if (state.currentMapKey !== 'station') return false;
@@ -454,6 +482,13 @@ function isCarBlockedByTrafficJam(car, jammedCarIds = new Set()) {
   const nextX = car.x + car.dx;
   if (tileAtFor(car.mapKey, nextX, car.y).trafficBlocked) return true;
 
+  const wreckAhead = state.wrecks.find((wreck) => (
+    wreck.mapKey === car.mapKey
+    && wreck.y === car.y
+    && (wreck.x === nextX || (car.dx > 0 ? wreck.x > car.x : wreck.x < car.x))
+  ));
+  if (wreckAhead) return true;
+
   const roadBlockingEngine = state.fireEngines.find((engine) => (
     engine.mapKey === car.mapKey
     && engine.dx === car.dx
@@ -462,6 +497,14 @@ function isCarBlockedByTrafficJam(car, jammedCarIds = new Set()) {
     && (engine.x === nextX || (car.dx > 0 ? engine.x > car.x : engine.x < car.x))
   ));
   if (roadBlockingEngine) return true;
+
+  const recoveryWagonAhead = state.recoveryWagons.find((wagon) => (
+    wagon.mapKey === car.mapKey
+    && tileAtFor(wagon.mapKey, wagon.x, wagon.y).road
+    && wagon.y === car.y
+    && (wagon.x === nextX || (car.dx > 0 ? wagon.x > car.x : wagon.x < car.x))
+  ));
+  if (recoveryWagonAhead) return true;
 
   const queuedCarAhead = state.cars.find((other) => (
     other.id !== car.id
@@ -574,6 +617,27 @@ function killNpcsCaughtInFire() {
 function addFire(mapKey, x, y) {
   if (isFireAt(mapKey, x, y)) return;
   state.fires.push({ mapKey, x, y });
+  burnCarsTouchingFire();
+}
+
+function burnCarsTouchingFire() {
+  const burningCars = state.cars.filter((car) => isFireAt(car.mapKey, car.x, car.y));
+  if (!burningCars.length) return;
+  state.cars = state.cars.filter((car) => !isFireAt(car.mapKey, car.x, car.y));
+  burningCars.forEach((car) => addWreck(car));
+}
+
+function addWreck(car) {
+  if (state.wrecks.some((wreck) => wreck.mapKey === car.mapKey && wreck.x === car.x && wreck.y === car.y)) return;
+  state.wrecks.push({
+    id: `wreck-${state.nextWreckId}`,
+    mapKey: car.mapKey,
+    x: car.x,
+    y: car.y,
+    status: 'waitingRecovery',
+  });
+  state.nextWreckId += 1;
+  writeLog('A car catches fire and collapses into a smoking wreck. Traffic brakes into a queue until recovery arrives.');
 }
 
 function canBurn(mapKey, x, y) {
@@ -1236,6 +1300,9 @@ function draw() {
   state.fires.filter((fire) => fire.mapKey === state.currentMapKey).forEach((fire) => {
     if (visible.has(`${fire.x},${fire.y}`)) drawSprite(fire.x, fire.y, 'fire', true);
   });
+  state.wrecks.filter((wreck) => wreck.mapKey === state.currentMapKey).forEach((wreck) => {
+    if (visible.has(`${wreck.x},${wreck.y}`)) drawSprite(wreck.x, wreck.y, 'wreck', true);
+  });
   state.cars.filter((car) => car.mapKey === state.currentMapKey).forEach((car) => {
     if (visible.has(`${car.x},${car.y}`)) drawSprite(car.x, car.y, car.sprite, true);
   });
@@ -1247,6 +1314,9 @@ function draw() {
   });
   state.cleanupVans.filter((van) => van.mapKey === state.currentMapKey).forEach((van) => {
     if (visible.has(`${van.x},${van.y}`)) drawSprite(van.x, van.y, van.sprite, true);
+  });
+  state.recoveryWagons.filter((wagon) => wagon.mapKey === state.currentMapKey).forEach((wagon) => {
+    if (visible.has(`${wagon.x},${wagon.y}`)) drawSprite(wagon.x, wagon.y, wagon.sprite, true);
   });
   state.fireEngines.filter((engine) => engine.mapKey === state.currentMapKey).forEach((engine) => {
     if (visible.has(`${engine.x},${engine.y}`)) drawSprite(engine.x, engine.y, engine.sprite, true);
@@ -1392,14 +1462,21 @@ function drawSprite(x, y, sprite, visible, desaturated = false, alpha = 1) {
     case 'C':
     case 'carLeft':
     case 'carRight':
+    case 'wreck':
     case 'fireEngine':
     case 'ambulance':
     case 'policeCar':
     case 'cleanupVan':
+    case 'recoveryWagon':
       g.roundRect(px + 4, py + 9, 24, 14, 4).fill(tone(vehicleColorFor(sprite)));
       g.rect(px + 10, py + 5, 12, 7).fill(tone(0x79d2ff));
       g.circle(px + 10, py + 24, 3).fill(tone(0x15181f));
       g.circle(px + 23, py + 24, 3).fill(tone(0x15181f));
+      if (sprite === 'wreck') {
+        g.rect(px + 7, py + 11, 18, 8).fill(tone(0x111827));
+        g.rect(px + 12, py + 6, 9, 5).fill(tone(0x4b5563));
+        g.circle(px + 16, py + 8, 2).fill(tone(0xf97316));
+      }
       if (sprite === 'fireEngine') {
         g.rect(px + 8, py + 12, 16, 3).fill(tone(0xf8fafc));
         g.rect(px + 14, py + 6, 4, 8).fill(tone(0xf8fafc));
@@ -1413,6 +1490,10 @@ function drawSprite(x, y, sprite, visible, desaturated = false, alpha = 1) {
       if (sprite === 'cleanupVan') {
         g.rect(px + 7, py + 13, 18, 3).fill(tone(0xa3e635));
         g.circle(px + 16, py + 7, 2).fill(tone(0xa3e635));
+      }
+      if (sprite === 'recoveryWagon') {
+        g.rect(px + 7, py + 12, 18, 3).fill(tone(0xfacc15));
+        g.rect(px + 20, py + 5, 3, 11).fill(tone(0xfacc15));
       }
       if (sprite === 'policeCar') {
         g.rect(px + 5, py + 13, 22, 3).fill(tone(0xf8fafc));
@@ -1696,6 +1777,7 @@ function vehicleColorFor(sprite) {
   if (sprite === 'ambulance') return 0xf8fafc;
   if (sprite === 'cleanupVan') return 0xe5e7eb;
   if (sprite === 'policeCar') return 0x1d4ed8;
+  if (sprite === 'recoveryWagon') return 0x92400e;
   return 0xef4444;
 }
 
@@ -1707,7 +1789,7 @@ function baseColorFor(sprite) {
   if (sprite === 'ashPile') return 0x292524;
   if (sprite === 'corpse' || sprite === 'chalkOutline' || sprite === 'barrier' || sprite === 'cleanupSign') return 0x000000;
   if (sprite === 'trainDoor') return 0x102338;
-  if (sprite === 'carLeft' || sprite === 'carRight' || sprite === 'fireEngine' || sprite === 'ambulance' || sprite === 'policeCar' || sprite === 'cleanupVan') return 0x1f2933;
+  if (sprite === 'carLeft' || sprite === 'carRight' || sprite === 'fireEngine' || sprite === 'ambulance' || sprite === 'policeCar' || sprite === 'cleanupVan' || sprite === 'recoveryWagon' || sprite === 'wreck') return 0x1f2933;
   if (sprite === 'firefighter') return 0x7c2d12;
   if (sprite === 'paramedic') return 0xf8fafc;
   if (sprite === 'cleanupResponder') return 0xe5e7eb;
@@ -1788,6 +1870,10 @@ function carAt(x, y) {
 
 function carAtOnMap(mapKey, x, y) {
   return state.cars.find((car) => car.mapKey === mapKey && car.x === x && car.y === y);
+}
+
+function wreckAt(x, y) {
+  return state.wrecks.find((wreck) => wreck.mapKey === state.currentMapKey && wreck.x === x && wreck.y === y);
 }
 
 function itemAt(x, y) {
