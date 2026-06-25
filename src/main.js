@@ -208,6 +208,7 @@ function resetLoop(message, { effect = true } = {}) {
     nextWreckId: 0,
     recoveryWagons: [],
     nextRecoveryWagonId: 0,
+    nextRecoveryWagonDispatchMinute: 0,
     fireEngines: [],
     nextFireEngineId: 0,
     ambulances: [],
