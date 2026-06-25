@@ -27,6 +27,7 @@ const CAR_SPAWN_MAX_MINUTES = 15;
 const FIRE_ENGINE_CREW_SIZE = 6;
 const FIRE_ENGINE_RESPONSE_DISTANCE = 5;
 const FIRE_ENGINE_ROAD_Y = 30;
+const NPC_ROAD_PATH_COST = 20;
 
 const itemDefinitions = createItemDefinitions({ addLoopMinutes, fireGun, igniteFire, writeLog, draw });
 const scheduledEvents = createScheduledEvents({ updateTerrain, moveItem, writeLog, queueStationMasterDoorAction });
@@ -106,6 +107,7 @@ function resetLoop(message, { effect = true } = {}) {
     arrested: false,
     fires: [],
     ashPiles: [],
+    fireEngineDispatchedThisTurn: false,
   };
   state.npcs = allMapNpcs().map(createNpcState);
   seedRoadTraffic();
@@ -233,6 +235,7 @@ function interact() {
 }
 
 function spendMinute(message) {
+  state.fireEngineDispatchedThisTurn = false;
   state.minutesLeft -= 1;
   runScheduledEvents();
   updateFireResponse();
@@ -268,6 +271,7 @@ function seedRoadTraffic() {
 
 function spawnCar(spawner) {
   const mapKey = spawner.mapKey ?? 'station';
+  if (state.fireEngineDispatchedThisTurn || trafficQueuedToSpawner(spawner)) return false;
   if (carAtOnMap(mapKey, spawner.x, spawner.y)) return false;
   state.cars.push({
     id: `car-${state.nextCarId}`,
@@ -311,6 +315,7 @@ function dispatchFireEngine() {
   };
   state.nextFireEngineId += 1;
   state.fireEngines.push(engine);
+  state.fireEngineDispatchedThisTurn = true;
   state.lastFireResponseSize = state.fires.length;
   writeLog('A fire engine siren rises from the left side of the road and races toward the blaze.');
 }
@@ -333,7 +338,8 @@ function moveFireEngine(engine) {
 
   const nearestFire = closestFireTo({ mapKey: engine.mapKey, x: engine.x, y: engine.y });
   if (!nearestFire) return { ...engine, status: 'leaving' };
-  const moved = { ...engine, x: engine.x + engine.dx, targetFire: { ...nearestFire } };
+  const step = nextVehicleStepToward({ ...engine, target: nearestFire });
+  const moved = { ...engine, ...(step ?? { x: engine.x + engine.dx, y: engine.y }), targetFire: { ...nearestFire } };
   if (manhattanDistance(moved, nearestFire) <= FIRE_ENGINE_RESPONSE_DISTANCE) {
     deployFirefighters(moved);
     writeLog('The fire engine brakes near the fire and six firefighters leap out with hoses.');
@@ -384,8 +390,15 @@ function fireEngineAt(x, y) {
 
 function moveCars() {
   updateCarSpawns();
+  const jammed = new Set();
   state.cars = state.cars
-    .map((car) => ({ ...car, x: car.x + car.dx }))
+    .map((car) => {
+      if (isCarBlockedByTrafficJam(car, jammed)) {
+        jammed.add(car.id);
+        return car;
+      }
+      return { ...car, x: car.x + car.dx };
+    })
     .filter((car) => car.x >= 0 && car.x < maps[car.mapKey].width);
 
   killNpcsHitByCars();
@@ -413,6 +426,38 @@ function killNpc(npc, cause = 'is struck by a passing car and killed') {
     state.stationMasterScolding = false;
     writeLog('Without the station master, the brass-key door will not be tended this loop.');
   }
+}
+
+function isCarBlockedByTrafficJam(car, jammedCarIds = new Set()) {
+  const nextX = car.x + car.dx;
+  const roadBlockingEngine = state.fireEngines.find((engine) => (
+    engine.mapKey === car.mapKey
+    && engine.dx === car.dx
+    && tileAtFor(engine.mapKey, engine.x, engine.y).road
+    && engine.y === car.y
+    && (engine.x === nextX || (car.dx > 0 ? engine.x > car.x : engine.x < car.x))
+  ));
+  if (roadBlockingEngine) return true;
+
+  const queuedCarAhead = state.cars.find((other) => (
+    other.id !== car.id
+    && other.mapKey === car.mapKey
+    && other.y === car.y
+    && other.dx === car.dx
+    && other.x === nextX
+    && jammedCarIds.has(other.id)
+  ));
+  return Boolean(queuedCarAhead);
+}
+
+function trafficQueuedToSpawner(spawner) {
+  const mapKey = spawner.mapKey ?? 'station';
+  return state.cars.some((car) => (
+    car.mapKey === mapKey
+    && car.y === spawner.y
+    && car.dx === spawner.dx
+    && Math.abs(car.x - spawner.x) <= 1
+  ));
 }
 
 function updateCarSpawns() {
@@ -970,23 +1015,32 @@ function chaseStepOnAxis(npc, axis, dx, dy, occupied) {
   return step;
 }
 
-function nextStepToward(npc, occupied, { avoidFire = !isLawEnforcement(npc) } = {}) {
+function nextStepToward(npc, occupied, { avoidFire = !isLawEnforcement(npc), avoidRoad = true } = {}) {
   const startKey = positionKey(npc.x, npc.y);
   const targetKey = positionKey(npc.target.x, npc.target.y);
-  const queue = [{ x: npc.x, y: npc.y }];
+  const distances = new Map([[startKey, 0]]);
   const cameFrom = new Map([[startKey, null]]);
+  const queue = [{ x: npc.x, y: npc.y, cost: 0 }];
 
-  for (let cursor = 0; cursor < queue.length; cursor += 1) {
-    const current = queue[cursor];
+  while (queue.length) {
+    queue.sort((a, b) => a.cost - b.cost);
+    const current = queue.shift();
+    if (!current) break;
+    if (current.cost > distances.get(positionKey(current.x, current.y))) continue;
     if (positionKey(current.x, current.y) === targetKey) break;
 
     neighborsOf(current).forEach((neighbor) => {
       const key = positionKey(neighbor.x, neighbor.y);
-      if (cameFrom.has(key) || tileAtFor(npc.mapKey, neighbor.x, neighbor.y).blocks) return;
+      const tile = tileAtFor(npc.mapKey, neighbor.x, neighbor.y);
+      if (tile.blocks) return;
       if (avoidFire && isFireAt(npc.mapKey, neighbor.x, neighbor.y)) return;
       if (occupied.has(`${npc.mapKey}:${key}`) && key !== targetKey) return;
+      const roadCost = avoidRoad && tile.road && key !== targetKey ? NPC_ROAD_PATH_COST : 1;
+      const nextCost = current.cost + roadCost;
+      if (distances.has(key) && distances.get(key) <= nextCost) return;
+      distances.set(key, nextCost);
       cameFrom.set(key, current);
-      queue.push(neighbor);
+      queue.push({ ...neighbor, cost: nextCost });
     });
   }
 
@@ -997,7 +1051,11 @@ function nextStepToward(npc, occupied, { avoidFire = !isLawEnforcement(npc) } = 
     step = previous;
     previous = cameFrom.get(positionKey(previous.x, previous.y));
   }
-  return step;
+  return { x: step.x, y: step.y };
+}
+
+function nextVehicleStepToward(vehicle) {
+  return nextStepToward(vehicle, new Set(), { avoidFire: false, avoidRoad: false });
 }
 
 function neighborsOf(point) {
