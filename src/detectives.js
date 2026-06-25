@@ -1,6 +1,6 @@
 const POLICE_CAR_RESPONSE_DISTANCE = 3;
 const POLICE_CAR_ROAD_Y = 31;
-const DETECTIVE_RESPONSE_DELAY_MINUTES = 5;
+export const DETECTIVE_RESPONSE_DELAY_MINUTES = 5;
 
 export function isDetective(npc) {
   return npc.profile.role === 'detective';

@@ -5,7 +5,7 @@ import { createItemDefinitions, placedItems } from './items.js';
 import { npcBlockedRemarks, npcDefinitions, npcMapSymbols } from './npcs.js';
 import { createFirefighterLogic, canExtinguishFire, isFirefighter } from './firefighters.js';
 import { createAmbulanceLogic, isParamedic } from './ambulances.js';
-import { createDetectiveLogic, isDetective } from './detectives.js';
+import { createDetectiveLogic, DETECTIVE_RESPONSE_DELAY_MINUTES, isDetective } from './detectives.js';
 import { terrain } from './terrain.js';
 import './styles.css';
 
@@ -27,6 +27,7 @@ let resetEffectTimeout;
 const CAR_SPAWN_MINUTES = 5;
 const CAR_SPAWN_MAX_MINUTES = 15;
 const NPC_ROAD_PATH_COST = 20;
+const ASH_PILE_LIFETIME_MINUTES = 5;
 
 const itemDefinitions = createItemDefinitions({ addLoopMinutes, fireGun, igniteFire, writeLog, draw });
 const scheduledEvents = createScheduledEvents({ updateTerrain, moveItem, writeLog, queueStationMasterDoorAction });
@@ -320,6 +321,7 @@ function spendMinute(message) {
   updateDetectiveSceneWork();
   moveNpcs();
   if (updateFires()) return;
+  expireAshPiles();
   updateFireResponse();
   if (moveFireEngines()) return;
   if (moveAmbulances()) return;
@@ -543,7 +545,14 @@ function isFireAt(mapKey, x, y) {
 
 function addAshPile(mapKey, x, y) {
   if (state.ashPiles.some((ashPile) => ashPile.mapKey === mapKey && ashPile.x === x && ashPile.y === y)) return;
-  state.ashPiles.push({ mapKey, x, y });
+  state.ashPiles.push({ mapKey, x, y, createdMinute: elapsedMinutes() });
+}
+
+function expireAshPiles() {
+  const currentMinute = elapsedMinutes();
+  state.ashPiles = state.ashPiles.filter((ashPile) => (
+    currentMinute - (ashPile.createdMinute ?? currentMinute) < ASH_PILE_LIFETIME_MINUTES
+  ));
 }
 
 function closestFireTo(point) {
@@ -585,7 +594,7 @@ function markCorpseCollected(corpse) {
   const scene = state.crimeScenes.find((candidate) => candidate.corpseId === corpse.id);
   if (scene) {
     scene.status = 'bodyCollected';
-    scene.detectiveDispatchMinute = elapsedMinutes() + 5;
+    scene.detectiveDispatchMinute = elapsedMinutes() + DETECTIVE_RESPONSE_DELAY_MINUTES;
   }
 }
 
