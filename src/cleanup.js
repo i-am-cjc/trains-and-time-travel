@@ -2,6 +2,7 @@ const CLEANUP_CREW_SIZE = 4;
 const CLEANUP_VAN_RESPONSE_DISTANCE = 4;
 const CLEANUP_VAN_ROAD_Y = 29;
 const CLEANING_TURNS_REQUIRED = 3;
+const BLOCKED_REDISPATCH_DELAY_MINUTES = 20;
 
 export function isCleanupResponder(npc) {
   return npc.profile.role === 'cleanup responder';
@@ -9,6 +10,7 @@ export function isCleanupResponder(npc) {
 
 export function createCleanupLogic({
   getState,
+  getElapsedMinutes,
   maps,
   writeLog,
   killPlayer,
@@ -27,6 +29,7 @@ export function createCleanupLogic({
     const hazard = nextWaitingHazard();
     if (!hazard) return;
     const state = getState();
+    if (state.minutesElapsed < state.nextCleanupVanDispatchMinute) return;
     if (hazard.type === 'ash' && hasActiveAshCleanup()) return;
     if (state.cleanupVans.some((van) => van.hazardId === hazard.id && van.status !== 'leaving')) return;
     dispatchCleanupVan(hazard);
@@ -48,6 +51,7 @@ export function createCleanupLogic({
     };
     state.nextCleanupVanId += 1;
     state.cleanupVans.push(van);
+    state.nextCleanupVanDispatchMinute = state.minutesElapsed;
     hazard.status = 'cleanupDispatched';
     writeLog(`A cleanup van rolls in after the responders, carrying four hazmat-suited cleaners toward ${hazardLabel(hazard)}.`);
   }
@@ -207,7 +211,23 @@ export function createCleanupLogic({
   }
 
   function nextCleanupStep(npc, occupied) {
-    return nextStepToward(npc, occupied, { avoidFire: false }) ?? null;
+    const step = nextStepToward(npc, occupied, { avoidFire: false }) ?? null;
+    if (!step && (npc.x !== npc.target.x || npc.y !== npc.target.y)) markCleanupCrewBlocked(npc);
+    return step;
+  }
+
+  function markCleanupCrewBlocked(npc) {
+    const state = getState();
+    const van = state.cleanupVans.find((candidate) => candidate.id === npc.homeCleanupVanId);
+    if (!van || van.status !== 'deployed' || van.blockedReturn) return;
+    const hazard = hazardById(van.hazardId);
+    if (hazard && hazard.status !== 'cleaned') hazard.status = 'waitingCleanup';
+    van.blockedReturn = true;
+    van.status = 'returning';
+    state.nextCleanupVanDispatchMinute = getElapsedMinutes() + BLOCKED_REDISPATCH_DELAY_MINUTES;
+    removeCleanupSign(van);
+    state.npcs = state.npcs.filter((candidate) => candidate.homeCleanupVanId !== van.id);
+    writeLog('The cleanup crew cannot reach the hazard, so they return to the van and leave. Another crew can be dispatched in twenty minutes.');
   }
 
   function cleanupVanAt(x, y) {

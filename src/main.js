@@ -71,6 +71,7 @@ const maps = Object.fromEntries(await Promise.all(
 ));
 ({ updateFireResponse, moveFireEngines, returningFireEngineFor, fireEngineAt, nextFirefighterStep } = createFirefighterLogic({
   getState: () => state,
+  getElapsedMinutes: elapsedMinutes,
   maps,
   writeLog,
   killPlayer,
@@ -88,6 +89,7 @@ const maps = Object.fromEntries(await Promise.all(
 
 ({ updateAmbulanceResponse, moveAmbulances, updateParamedicCollection, returningAmbulanceFor, ambulanceAt, nextParamedicStep } = createAmbulanceLogic({
   getState: () => state,
+  getElapsedMinutes: elapsedMinutes,
   maps,
   writeLog,
   killPlayer,
@@ -124,6 +126,7 @@ const maps = Object.fromEntries(await Promise.all(
 
 ({ updateCleanupResponse, moveCleanupVans, updateCleanupWork, returningCleanupVanFor, cleanupVanAt, nextCleanupStep } = createCleanupLogic({
   getState: () => state,
+  getElapsedMinutes: elapsedMinutes,
   maps,
   writeLog,
   killPlayer,
@@ -211,12 +214,16 @@ function resetLoop(message, { effect = true } = {}) {
     nextRecoveryWagonDispatchMinute: 0,
     fireEngines: [],
     nextFireEngineId: 0,
+    nextFireEngineDispatchMinute: 0,
     ambulances: [],
     nextAmbulanceId: 0,
+    nextAmbulanceDispatchMinute: 0,
     policeCars: [],
     nextPoliceCarId: 0,
+    nextPoliceCarDispatchMinute: 0,
     cleanupVans: [],
     nextCleanupVanId: 0,
+    nextCleanupVanDispatchMinute: 0,
     corpses: [],
     nextCorpseId: 0,
     crimeScenes: [],

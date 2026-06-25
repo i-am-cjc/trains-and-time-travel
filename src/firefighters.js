@@ -2,6 +2,7 @@ const FIRE_ENGINE_CREW_SIZE = 6;
 const FIRE_ENGINE_RESPONSE_DISTANCE = 5;
 const FIRE_ENGINE_SPAWN_X = 72;
 const FIRE_ENGINE_ROAD_Y = 30;
+const BLOCKED_REDISPATCH_DELAY_MINUTES = 20;
 
 export function isFirefighter(npc) {
   return npc.profile.role === 'firefighter';
@@ -13,6 +14,7 @@ export function canExtinguishFire(npc) {
 
 export function createFirefighterLogic({
   getState,
+  getElapsedMinutes,
   maps,
   writeLog,
   killPlayer,
@@ -36,6 +38,7 @@ export function createFirefighterLogic({
     }
 
     const activeResponse = state.fireEngines.some((engine) => engine.status !== 'leaving');
+    if (state.minutesElapsed < state.nextFireEngineDispatchMinute) return;
     if (!activeResponse || state.fires.length > state.lastFireResponseSize) dispatchFireEngine();
   }
 
@@ -57,6 +60,7 @@ export function createFirefighterLogic({
     state.fireEngines.push(engine);
     state.fireEngineDispatchedThisTurn = true;
     state.lastFireResponseSize = state.fires.length;
+    state.nextFireEngineDispatchMinute = state.minutesElapsed;
     writeLog('A fire engine siren rises from the station road and races toward the blaze.');
   }
 
@@ -154,7 +158,20 @@ export function createFirefighterLogic({
     if (!nearestFire) return null;
     const adjacentTargets = neighborsOf(nearestFire).filter((point) => !tileAtFor(npc.mapKey, point.x, point.y).blocks);
     const target = closestPoint(npc, adjacentTargets) ?? nearestFire;
-    return nextStepToward({ ...npc, target }, occupied, { avoidFire: false });
+    const step = nextStepToward({ ...npc, target }, occupied, { avoidFire: false });
+    if (!step && (npc.x !== target.x || npc.y !== target.y)) markFireCrewBlocked(npc);
+    return step;
+  }
+
+  function markFireCrewBlocked(npc) {
+    const state = getState();
+    const engine = state.fireEngines.find((candidate) => candidate.id === npc.homeEngineId);
+    if (!engine || engine.status !== 'deployed' || engine.blockedReturn) return;
+    engine.blockedReturn = true;
+    engine.status = 'returning';
+    state.nextFireEngineDispatchMinute = getElapsedMinutes() + BLOCKED_REDISPATCH_DELAY_MINUTES;
+    state.npcs = state.npcs.filter((candidate) => candidate.homeEngineId !== engine.id);
+    writeLog('The firefighters cannot reach the blaze, so they climb back into the engine and leave. Another crew can be dispatched in twenty minutes.');
   }
 
   function moveFireEngineBackToRoad(engine) {

@@ -2,6 +2,7 @@ const AMBULANCE_CREW_SIZE = 2;
 const AMBULANCE_RESPONSE_DISTANCE = 3;
 const AMBULANCE_SPAWN_X = 72;
 const AMBULANCE_ROAD_Y = 30;
+const BLOCKED_REDISPATCH_DELAY_MINUTES = 20;
 
 export function isParamedic(npc) {
   return npc.profile.role === 'paramedic';
@@ -9,6 +10,7 @@ export function isParamedic(npc) {
 
 export function createAmbulanceLogic({
   getState,
+  getElapsedMinutes,
   maps,
   writeLog,
   killPlayer,
@@ -29,6 +31,7 @@ export function createAmbulanceLogic({
     const state = getState();
     const waitingCorpse = nextWaitingCorpse();
     if (!waitingCorpse) return;
+    if (state.minutesElapsed < state.nextAmbulanceDispatchMinute) return;
     const activeResponse = state.ambulances.some((ambulance) => ambulance.corpseId === waitingCorpse.id && ambulance.status !== 'leaving');
     if (!activeResponse) dispatchAmbulance(waitingCorpse);
   }
@@ -49,6 +52,7 @@ export function createAmbulanceLogic({
     };
     state.nextAmbulanceId += 1;
     state.ambulances.push(ambulance);
+    state.nextAmbulanceDispatchMinute = state.minutesElapsed;
     onAmbulanceDispatched(corpse);
     writeLog('An ambulance siren rises from the road and speeds toward the body.');
   }
@@ -150,7 +154,20 @@ export function createAmbulanceLogic({
   }
 
   function nextParamedicStep(npc, occupied) {
-    return nextStepToward(npc, occupied, { avoidFire: false }) ?? null;
+    const step = nextStepToward(npc, occupied, { avoidFire: false }) ?? null;
+    if (!step && (npc.x !== npc.target.x || npc.y !== npc.target.y)) markAmbulanceCrewBlocked(npc);
+    return step;
+  }
+
+  function markAmbulanceCrewBlocked(npc) {
+    const state = getState();
+    const ambulance = state.ambulances.find((candidate) => candidate.id === npc.homeAmbulanceId);
+    if (!ambulance || ambulance.status !== 'deployed' || ambulance.blockedReturn) return;
+    ambulance.blockedReturn = true;
+    ambulance.status = 'returning';
+    state.nextAmbulanceDispatchMinute = getElapsedMinutes() + BLOCKED_REDISPATCH_DELAY_MINUTES;
+    state.npcs = state.npcs.filter((candidate) => candidate.homeAmbulanceId !== ambulance.id);
+    writeLog('The paramedics cannot reach the body, so they return to the ambulance and leave. Another crew can be dispatched in twenty minutes.');
   }
 
   function ambulanceAt(x, y) {
