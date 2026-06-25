@@ -28,6 +28,7 @@ let resetEffectTimeout;
 const CAR_SPAWN_MINUTES = 5;
 const CAR_SPAWN_MAX_MINUTES = 15;
 const NPC_ROAD_PATH_COST = 20;
+const GUNFIRE_PANIC_TURNS = 20;
 
 const itemDefinitions = createItemDefinitions({ resetRun: resetLoop, fireGun, igniteFire, writeLog, draw });
 const scheduledEvents = createScheduledEvents({ updateTerrain, moveItem, writeLog, queueStationMasterDoorAction });
@@ -210,6 +211,7 @@ function resetLoop(message, { effect = true } = {}) {
     stationMasterScolding: false,
     hasCrossedTrainDoor: false,
     gunfirePanic: false,
+    gunfirePanicTurnsRemaining: 0,
     shootingMode: false,
     bullet: null,
     arrested: false,
@@ -353,6 +355,7 @@ function spendMinute(message) {
   updateDetectiveSceneWork();
   updateCleanupWork();
   moveNpcs();
+  updateGunfirePanicTimer();
   if (updateFires()) return;
   updateCleanupResponse();
   updateFireResponse();
@@ -887,6 +890,23 @@ function alertStationMasterToTrackTrespass() {
   master.target = { ...state.player };
   state.stationMasterScolding = true;
   writeLog('The station master spots you on the tracks and marches over to tell you off.');
+}
+
+function updateGunfirePanicTimer() {
+  if (!state.gunfirePanic) return;
+  state.gunfirePanicTurnsRemaining -= 1;
+  if (state.gunfirePanicTurnsRemaining > 0) return;
+  state.gunfirePanic = false;
+  state.gunfirePanicTurnsRemaining = 0;
+  state.npcs = state.npcs.map(resetNpcFleeingBehavior);
+  writeLog('The panic ebbs. NPCs return to their routines.');
+}
+
+function resetNpcFleeingBehavior(npc) {
+  if (returningFireEngineFor(npc) || returningAmbulanceFor(npc) || returningPoliceCarFor(npc) || returningCleanupVanFor(npc)) return npc;
+  if (!npc.route?.length) return npc;
+  const routeTarget = closestPoint(npc, npc.route) ?? npc.route[0];
+  return { ...npc, target: routeTarget, arrestingPlayer: false, chaseAxis: null };
 }
 
 function updateGunfirePanicTargets() {
@@ -1809,6 +1829,7 @@ function fireGun(dx, dy) {
 
   state.shootingMode = false;
   state.gunfirePanic = true;
+  state.gunfirePanicTurnsRemaining = GUNFIRE_PANIC_TURNS;
   const shot = traceBullet(dx, dy);
   state.bullet = { path: shot.path, index: 0 };
   animateBullet(shot);
