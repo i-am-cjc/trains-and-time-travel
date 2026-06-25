@@ -8,6 +8,7 @@ import './styles.css';
 
 const app = new Application();
 const world = new Container();
+world.sortableChildren = true;
 const hud = document.querySelector('#hud');
 const log = document.querySelector('#log');
 const inventoryList = document.querySelector('#inventory-list');
@@ -24,6 +25,11 @@ let resetEffectTimeout;
 const bloodStains = new Set();
 const CAR_SPAWN_MINUTES = 5;
 const CAR_SPAWN_MAX_MINUTES = 15;
+const ISO_TILE_WIDTH = TILE_SIZE * 2;
+const ISO_TILE_HEIGHT = TILE_SIZE;
+const ISO_HALF_WIDTH = ISO_TILE_WIDTH / 2;
+const ISO_HALF_HEIGHT = ISO_TILE_HEIGHT / 2;
+const ISO_WALL_HEIGHT = TILE_SIZE * 0.8;
 
 const itemDefinitions = createItemDefinitions({ addLoopMinutes, fireGun, writeLog, draw });
 const scheduledEvents = createScheduledEvents({ updateTerrain, moveItem, writeLog, queueStationMasterDoorAction });
@@ -68,8 +74,9 @@ inspectButton.addEventListener('click', () => {
 app.canvas.addEventListener('click', (event) => {
   if (!inspectMode) return;
   const rect = app.canvas.getBoundingClientRect();
-  const x = Math.floor((event.clientX - rect.left - world.x) / TILE_SIZE);
-  const y = Math.floor((event.clientY - rect.top - world.y) / TILE_SIZE);
+  const point = screenToTile(event.clientX - rect.left, event.clientY - rect.top);
+  const x = point.x;
+  const y = point.y;
   describeTile(x, y);
 });
 
@@ -781,6 +788,58 @@ function positionKey(x, y) {
   return `${x},${y}`;
 }
 
+function tileToIso(x, y) {
+  return {
+    x: (x - y) * ISO_HALF_WIDTH,
+    y: (x + y) * ISO_HALF_HEIGHT,
+  };
+}
+
+function screenToTile(screenX, screenY) {
+  const isoX = screenX - world.x;
+  const isoY = screenY - world.y;
+  const x = Math.floor((isoY / ISO_HALF_HEIGHT + isoX / ISO_HALF_WIDTH) / 2);
+  const y = Math.floor((isoY / ISO_HALF_HEIGHT - isoX / ISO_HALF_WIDTH) / 2);
+  return { x, y };
+}
+
+function spriteContainer(x, y, lift = 0) {
+  const c = new Container();
+  const point = tileToIso(x, y);
+  c.x = point.x;
+  c.y = point.y - lift;
+  c.zIndex = (x + y) * 100 + lift;
+  return c;
+}
+
+function drawIsoDiamond(g, x, y, width, height, color, alpha = 1) {
+  g.poly([x, y - height / 2, x + width / 2, y, x, y + height / 2, x - width / 2, y]).fill({ color, alpha });
+}
+
+function addTopDownLayer(c) {
+  const g = new Graphics();
+  g.rotation = Math.PI / 4;
+  g.scale.y = 0.5;
+  g.x = 0;
+  g.y = -ISO_HALF_HEIGHT;
+  g.pivot.set(TILE_SIZE / 2, TILE_SIZE / 2);
+  c.addChild(g);
+  return g;
+}
+
+function addBillboardLayer(c) {
+  const g = new Graphics();
+  g.skew.x = -0.22;
+  g.x = -TILE_SIZE / 2;
+  g.y = -TILE_SIZE;
+  c.addChild(g);
+  return g;
+}
+
+function isBillboardSprite(sprite) {
+  return ['N', 'M', 'police', 'homeless', 'bullet', 'player', 'playerGun'].includes(sprite) || String(sprite).startsWith('npc-');
+}
+
 function draw() {
   world.removeChildren().forEach((child) => child.destroy());
   const visible = visibleTiles();
@@ -807,14 +866,15 @@ function draw() {
     if (visible.has(`${bullet.x},${bullet.y}`)) drawSprite(bullet.x, bullet.y, 'bullet', true);
   }
   drawSprite(state.player.x, state.player.y, state.shootingMode ? 'playerGun' : 'player', true);
-  world.x = Math.round(app.screen.width / 2 - (state.player.x + 0.5) * TILE_SIZE);
-  world.y = Math.round(app.screen.height / 2 - (state.player.y + 0.5) * TILE_SIZE);
+  const playerScreen = tileToIso(state.player.x, state.player.y);
+  world.x = Math.round(app.screen.width / 2 - playerScreen.x);
+  world.y = Math.round(app.screen.height / 2 - playerScreen.y);
   hud.textContent = `Loop ${loopCount} · Minute ${elapsedMinutes()} / ${state.loopLimit} · ${state.minutesLeft} min left`;
 }
 
 function visibleDrawBounds() {
-  const halfTilesWide = Math.ceil(app.screen.width / TILE_SIZE / 2) + 2;
-  const halfTilesHigh = Math.ceil(app.screen.height / TILE_SIZE / 2) + 2;
+  const halfTilesWide = Math.ceil(app.screen.width / ISO_TILE_WIDTH) + 8;
+  const halfTilesHigh = Math.ceil(app.screen.height / ISO_TILE_HEIGHT) + 8;
   return {
     minX: Math.max(0, state.player.x - halfTilesWide),
     maxX: Math.min(map.width - 1, state.player.x + halfTilesWide),
@@ -833,14 +893,14 @@ function npcSprite(npc) {
 function drawItem(item, visible) {
   const definition = itemDefinitions[item.type];
   if (!visible) return;
+  const c = spriteContainer(item.x, item.y, 16);
   const g = new Graphics();
-  const px = item.x * TILE_SIZE;
-  const py = item.y * TILE_SIZE;
-  g.circle(px + 16, py + 16, 7).fill(definition.color);
-  g.circle(px + 16, py + 16, 5).stroke({ color: 0x20242a, width: 2 });
-  g.moveTo(px + 16, py + 16).lineTo(px + 16, py + 11).lineTo(px + 19, py + 16).stroke({ color: 0x20242a, width: 1.5 });
-  g.rect(px + 13, py + 7, 6, 3).fill(0xd97706);
-  world.addChild(g);
+  g.circle(0, -8, 7).fill(definition.color);
+  g.circle(0, -8, 5).stroke({ color: 0x20242a, width: 2 });
+  g.moveTo(0, -8).lineTo(0, -13).lineTo(3, -8).stroke({ color: 0x20242a, width: 1.5 });
+  g.rect(-3, -17, 6, 3).fill(0xd97706);
+  c.addChild(g);
+  world.addChild(c);
 }
 
 function drawTile(x, y, isVisible) {
@@ -854,19 +914,37 @@ function drawTile(x, y, isVisible) {
 
 
 function drawSprite(x, y, sprite, visible, desaturated = false, alpha = 1) {
-  const g = new Graphics();
-  g.alpha = alpha;
+  const c = spriteContainer(x, y, isBillboardSprite(sprite) ? 18 : 0);
+  c.alpha = alpha;
   const tone = (color) => (desaturated ? desaturate(color) : color);
   const fill = (color) => (visible ? tone(color) : 0x000000);
-  const px = x * TILE_SIZE;
-  const py = y * TILE_SIZE;
-  const inset = 3;
+  const baseColor = fill(baseColorFor(sprite));
 
-  g.rect(px, py, TILE_SIZE - 1, TILE_SIZE - 1).fill(fill(baseColorFor(sprite)));
+  if (isBillboardSprite(sprite)) {
+    const shadow = new Graphics();
+    shadow.ellipse(0, 0, 14, 5).fill({ color: 0x000000, alpha: 0.28 });
+    c.addChild(shadow);
+  } else {
+    const base = new Graphics();
+    drawIsoDiamond(base, 0, 0, ISO_TILE_WIDTH - 2, ISO_TILE_HEIGHT - 1, baseColor, visible ? 1 : 0.9);
+    c.addChild(base);
+    if (sprite === '#') {
+      base.poly([-ISO_HALF_WIDTH + 1, 0, 0, ISO_HALF_HEIGHT - 1, 0, ISO_HALF_HEIGHT + ISO_WALL_HEIGHT, -ISO_HALF_WIDTH + 1, ISO_WALL_HEIGHT]).fill(tone(0x252b34));
+      base.poly([ISO_HALF_WIDTH - 1, 0, 0, ISO_HALF_HEIGHT - 1, 0, ISO_HALF_HEIGHT + ISO_WALL_HEIGHT, ISO_HALF_WIDTH - 1, ISO_WALL_HEIGHT]).fill(tone(0x1b2028));
+      base.y -= ISO_WALL_HEIGHT;
+      c.zIndex += 45;
+    }
+  }
+
   if (!visible) {
-    world.addChild(g);
+    world.addChild(c);
     return;
   }
+
+  const g = isBillboardSprite(sprite) ? addBillboardLayer(c) : addTopDownLayer(c);
+  const px = 0;
+  const py = 0;
+  const inset = 3;
 
   switch (sprite) {
     case '#':
@@ -1101,17 +1179,18 @@ function drawSprite(x, y, sprite, visible, desaturated = false, alpha = 1) {
       g.rect(px + inset, py + inset, TILE_SIZE - inset * 2, TILE_SIZE - inset * 2).fill(fill(tileAt(x, y).color));
   }
 
-  world.addChild(g);
+  world.addChild(c);
 }
 
 function drawReadableBadge(x, y) {
+  const c = spriteContainer(x, y, 24);
   const g = new Graphics();
-  const px = x * TILE_SIZE;
-  const py = y * TILE_SIZE;
-  g.roundRect(px + 20, py + 3, 9, 9, 2).fill(0xf6f1df);
-  g.rect(px + 23, py + 5, 3, 1.5).fill(0x1d2430);
-  g.rect(px + 23, py + 8, 3, 1.5).fill(0x1d2430);
-  world.addChild(g);
+  g.skew.x = -0.22;
+  g.roundRect(7, -24, 9, 9, 2).fill(0xf6f1df);
+  g.rect(10, -22, 3, 1.5).fill(0x1d2430);
+  g.rect(10, -19, 3, 1.5).fill(0x1d2430);
+  c.addChild(g);
+  world.addChild(c);
 }
 
 
