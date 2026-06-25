@@ -154,6 +154,16 @@ export function createFirefighterLogic({
   }
 
   function nextFirefighterStep(npc, occupied) {
+    if (npc.fallbackDespawnAt) return nextStepToward(npc, occupied, { avoidFire: false, avoidRoad: true });
+
+    const returningEngine = returningFireEngineFor(npc);
+    if (returningEngine) {
+      const target = { x: returningEngine.x, y: returningEngine.y };
+      const step = nextStepToward({ ...npc, target }, occupied, { avoidFire: false, avoidRoad: true });
+      if (!step && (npc.x !== target.x || npc.y !== target.y)) return sendFirefighterToFireStation(npc, occupied);
+      return step;
+    }
+
     const nearestFire = closestFireTo(npc);
     if (!nearestFire) return null;
     const adjacentTargets = neighborsOf(nearestFire).filter((point) => !tileAtFor(npc.mapKey, point.x, point.y).blocks);
@@ -161,6 +171,16 @@ export function createFirefighterLogic({
     const step = nextStepToward({ ...npc, target }, occupied, { avoidFire: false });
     if (!step && (npc.x !== target.x || npc.y !== target.y)) markFireCrewBlocked(npc);
     return step;
+  }
+
+  function sendFirefighterToFireStation(npc, occupied) {
+    const fallback = closestFireStationDespawnPoint(npc);
+    if (!fallback) return null;
+    npc.target = fallback;
+    npc.fallbackDespawnAt = fallback;
+    npc.profile.goal = 'walk back to the fire station without stepping into the road';
+    writeLog(`${npc.profile.name} cannot safely get back to the engine, so they walk back to the fire station instead.`);
+    return nextStepToward(npc, occupied, { avoidFire: false, avoidRoad: true });
   }
 
   function markFireCrewBlocked(npc) {
@@ -186,6 +206,14 @@ export function createFirefighterLogic({
 
   function closestRoadPoint(point) {
     return closestPoint(point, maps[point.mapKey].walkable.filter((tile) => tileAtFor(point.mapKey, tile.x, tile.y).road));
+  }
+
+  function closestFireStationDespawnPoint(point) {
+    const candidates = maps[point.mapKey].walkable.filter((tile) => (
+      !tileAtFor(point.mapKey, tile.x, tile.y).road
+      && neighborsOf(tile).some((neighbor) => tileAtFor(point.mapKey, neighbor.x, neighbor.y).description === 'Fire station equipment bay.')
+    ));
+    return closestPoint(point, candidates);
   }
 
   return {
