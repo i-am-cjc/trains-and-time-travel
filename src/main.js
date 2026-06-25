@@ -89,6 +89,7 @@ const maps = Object.fromEntries(await Promise.all(
 }));
 ({ updateDetectiveResponse, movePoliceCars, updateDetectiveSceneWork, returningPoliceCarFor, policeCarAt, nextDetectiveStep } = createDetectiveLogic({
   getState: () => state,
+  getElapsedMinutes: elapsedMinutes,
   maps,
   writeLog,
   killPlayer,
@@ -100,6 +101,7 @@ const maps = Object.fromEntries(await Promise.all(
   uniquePoints,
   neighborsOf,
   closestPoint,
+  positionKey,
 }));
 let map = maps.station;
 resetLoop('The doors hiss open. You step onto the platform with two hours before everything resets.', { effect: false });
@@ -574,14 +576,17 @@ function leaveCorpse(npc) {
   };
   state.nextCorpseId += 1;
   state.corpses.push(corpse);
-  const scene = { id: `crime-scene-${state.nextCrimeSceneId}`, corpseId: corpse.id, mapKey: corpse.mapKey, x: corpse.x, y: corpse.y, status: 'awaitingAmbulance' };
+  const scene = { id: `crime-scene-${state.nextCrimeSceneId}`, corpseId: corpse.id, mapKey: corpse.mapKey, x: corpse.x, y: corpse.y, status: 'awaitingAmbulance', detectiveDispatchMinute: null };
   state.nextCrimeSceneId += 1;
   state.crimeScenes.push(scene);
 }
 
 function markCorpseCollected(corpse) {
   const scene = state.crimeScenes.find((candidate) => candidate.corpseId === corpse.id);
-  if (scene) scene.status = 'bodyCollected';
+  if (scene) {
+    scene.status = 'bodyCollected';
+    scene.detectiveDispatchMinute = elapsedMinutes() + 5;
+  }
 }
 
 function manhattanDistance(a, b) {
@@ -1107,11 +1112,11 @@ function draw() {
   state.barriers.filter((barrier) => barrier.mapKey === state.currentMapKey).forEach((barrier) => {
     if (visible.has(`${barrier.x},${barrier.y}`)) drawSprite(barrier.x, barrier.y, 'barrier', true);
   });
-  state.corpses.filter((corpse) => corpse.mapKey === state.currentMapKey).forEach((corpse) => {
-    if (visible.has(`${corpse.x},${corpse.y}`)) drawSprite(corpse.x, corpse.y, 'corpse', true);
-  });
   state.ashPiles.filter((ashPile) => ashPile.mapKey === state.currentMapKey).forEach((ashPile) => {
     if (visible.has(`${ashPile.x},${ashPile.y}`)) drawSprite(ashPile.x, ashPile.y, 'ashPile', true);
+  });
+  state.corpses.filter((corpse) => corpse.mapKey === state.currentMapKey).forEach((corpse) => {
+    if (visible.has(`${corpse.x},${corpse.y}`)) drawSprite(corpse.x, corpse.y, 'corpse', true);
   });
   state.fires.filter((fire) => fire.mapKey === state.currentMapKey).forEach((fire) => {
     if (visible.has(`${fire.x},${fire.y}`)) drawSprite(fire.x, fire.y, 'fire', true);
@@ -1620,7 +1625,11 @@ function tileAtFor(mapKey, x, y) {
   const tileType = override ?? targetMap.grid[y]?.[x];
   const baseTile = terrain[tileType] ?? terrain[' '];
   const overrideTerrain = state?.terrainOverrides[tileType];
-  return overrideTerrain ? { ...baseTile, ...overrideTerrain } : baseTile;
+  const tile = overrideTerrain ? { ...baseTile, ...overrideTerrain } : baseTile;
+  if (state?.barriers?.some((barrier) => barrier.mapKey === mapKey && barrier.x === x && barrier.y === y)) {
+    return { ...tile, blocks: true, blocksView: false, description: 'A police barrier blocks the taped-off crime scene.' };
+  }
+  return tile;
 }
 
 function npcAt(x, y) {
