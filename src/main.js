@@ -24,6 +24,9 @@ let resetEffectTimeout;
 const bloodStains = new Set();
 const CAR_SPAWN_MINUTES = 5;
 const CAR_SPAWN_MAX_MINUTES = 15;
+const FIRE_ENGINE_CREW_SIZE = 6;
+const FIRE_ENGINE_RESPONSE_DISTANCE = 5;
+const FIRE_ENGINE_ROAD_Y = 30;
 
 const itemDefinitions = createItemDefinitions({ addLoopMinutes, fireGun, igniteFire, writeLog, draw });
 const scheduledEvents = createScheduledEvents({ updateTerrain, moveItem, writeLog, queueStationMasterDoorAction });
@@ -91,6 +94,9 @@ function resetLoop(message, { effect = true } = {}) {
     npcs: [],
     cars: [],
     nextCarId: 0,
+    fireEngines: [],
+    nextFireEngineId: 0,
+    lastFireResponseSize: 0,
     carSpawnTimers: createCarSpawnTimers(),
     stationMasterScolding: false,
     hasCrossedTrainDoor: false,
@@ -229,9 +235,12 @@ function interact() {
 function spendMinute(message) {
   state.minutesLeft -= 1;
   runScheduledEvents();
+  updateFireResponse();
   updateFireTargets();
   moveNpcs();
   if (updateFires()) return;
+  updateFireResponse();
+  if (moveFireEngines()) return;
   if (moveCars()) return;
   if (state.minutesLeft <= 0) return resetLoop('The two-hour loop expires. Everything snaps back to the moment you arrived.');
   draw();
@@ -274,6 +283,103 @@ function spawnCar(spawner) {
 
 function nextCarSpawnDelay() {
   return randomInteger(CAR_SPAWN_MINUTES, CAR_SPAWN_MAX_MINUTES);
+}
+
+function updateFireResponse() {
+  if (!state.fires.length) {
+    state.lastFireResponseSize = 0;
+    recallFirefighters();
+    return;
+  }
+
+  const activeResponse = state.fireEngines.some((engine) => engine.status !== 'leaving');
+  if (!activeResponse || state.fires.length > state.lastFireResponseSize) dispatchFireEngine();
+}
+
+function dispatchFireEngine() {
+  const targetFire = state.fires[0];
+  if (!targetFire || state.fireEngines.some((engine) => engine.status === 'responding')) return;
+  const engine = {
+    id: `fire-engine-${state.nextFireEngineId}`,
+    mapKey: targetFire.mapKey,
+    x: 0,
+    y: FIRE_ENGINE_ROAD_Y,
+    dx: 1,
+    sprite: 'fireEngine',
+    status: 'responding',
+    targetFire: { ...targetFire },
+  };
+  state.nextFireEngineId += 1;
+  state.fireEngines.push(engine);
+  state.lastFireResponseSize = state.fires.length;
+  writeLog('A fire engine siren rises from the left side of the road and races toward the blaze.');
+}
+
+function moveFireEngines() {
+  state.fireEngines = state.fireEngines
+    .map((engine) => moveFireEngine(engine))
+    .filter((engine) => engine.x >= 0 && engine.x < maps[engine.mapKey].width);
+
+  if (state.currentMapKey !== 'station') return false;
+  const hitEngine = fireEngineAt(state.player.x, state.player.y);
+  if (!hitEngine) return false;
+  killPlayer('A fire engine roars through the road and knocks you out of the loop.');
+  return true;
+}
+
+function moveFireEngine(engine) {
+  if (engine.status === 'leaving') return { ...engine, x: engine.x + 1 };
+  if (engine.status === 'deployed') return engine;
+
+  const nearestFire = closestFireTo({ mapKey: engine.mapKey, x: engine.x, y: engine.y });
+  if (!nearestFire) return { ...engine, status: 'leaving' };
+  const moved = { ...engine, x: engine.x + engine.dx, targetFire: { ...nearestFire } };
+  if (manhattanDistance(moved, nearestFire) <= FIRE_ENGINE_RESPONSE_DISTANCE) {
+    deployFirefighters(moved);
+    writeLog('The fire engine brakes near the fire and six firefighters leap out with hoses.');
+    return { ...moved, status: 'deployed' };
+  }
+  return moved;
+}
+
+function deployFirefighters(engine) {
+  const spawnPoints = uniquePoints([engine, ...neighborsOf(engine), ...neighborsOf({ x: engine.x + 1, y: engine.y })])
+    .filter((point) => !tileAtFor(engine.mapKey, point.x, point.y).blocks && !npcAtOnMap(engine.mapKey, point.x, point.y));
+  for (let index = 0; index < FIRE_ENGINE_CREW_SIZE; index += 1) {
+    const point = spawnPoints[index % spawnPoints.length] ?? engine;
+    state.npcs.push(createFirefighterState(engine, point, index));
+  }
+}
+
+function createFirefighterState(engine, point, index) {
+  const profile = {
+    key: `firefighter-${engine.id}-${index}`,
+    name: `Firefighter ${index + 1}`,
+    age: 30 + index,
+    gender: index % 2 ? 'male' : 'female',
+    role: 'firefighter',
+    goal: 'put out fires and return to the engine when the blaze is gone',
+    dialogue: ['The firefighter says, “Stand back. We have the fire.”'],
+  };
+  return { x: point.x, y: point.y, mapKey: engine.mapKey, mapSymbol: 'F', profile, route: [point, point], target: { ...point }, homeEngineId: engine.id, pendingDoorActions: [] };
+}
+
+function recallFirefighters() {
+  state.fireEngines.forEach((engine) => {
+    if (engine.status !== 'deployed') return;
+    const crew = state.npcs.filter((npc) => npc.homeEngineId === engine.id);
+    crew.forEach((npc) => { npc.target = { x: engine.x, y: engine.y }; });
+    if (crew.every((npc) => manhattanDistance(npc, engine) <= 1)) {
+      const crewKeys = new Set(crew.map((npc) => npc.profile.key));
+      state.npcs = state.npcs.filter((npc) => !crewKeys.has(npc.profile.key));
+      engine.status = 'leaving';
+      writeLog('With the fire out, the firefighters climb back aboard and the engine pulls away to the right.');
+    }
+  });
+}
+
+function fireEngineAt(x, y) {
+  return state.fireEngines.find((engine) => engine.mapKey === state.currentMapKey && engine.x === x && engine.y === y);
 }
 
 function moveCars() {
@@ -366,7 +472,7 @@ function updateFireTargets() {
   state.npcs.forEach((npc) => {
     const nearestFire = closestFireTo(npc);
     if (!nearestFire) return;
-    if (isLawEnforcement(npc)) {
+    if (isFirefighter(npc)) {
       npc.target = nearestFire;
       return;
     }
@@ -376,7 +482,7 @@ function updateFireTargets() {
 
 function extinguishAdjacentFires() {
   const extinguished = new Set();
-  state.npcs.filter(isLawEnforcement).forEach((npc) => {
+  state.npcs.filter(canExtinguishFire).forEach((npc) => {
     const fire = state.fires.find((candidate) => candidate.mapKey === npc.mapKey && manhattanDistance(npc, candidate) <= 1);
     if (!fire) return;
     extinguished.add(`${fire.mapKey}:${positionKey(fire.x, fire.y)}`);
@@ -386,7 +492,7 @@ function extinguishAdjacentFires() {
     if (extinguished.has(`${fire.mapKey}:${positionKey(fire.x, fire.y)}`)) addAshPile(fire.mapKey, fire.x, fire.y);
   });
   state.fires = state.fires.filter((fire) => !extinguished.has(`${fire.mapKey}:${positionKey(fire.x, fire.y)}`));
-  writeLog('A police officer empties a fire extinguisher and beats back part of the blaze.');
+  writeLog('A firefighter opens a hose and beats back part of the blaze.');
 }
 
 function killNpcsCaughtInFire() {
@@ -672,6 +778,14 @@ function isLawEnforcement(npc) {
   return npc.profile.role?.includes('police');
 }
 
+function isFirefighter(npc) {
+  return npc.profile.role === 'firefighter';
+}
+
+function canExtinguishFire(npc) {
+  return isFirefighter(npc);
+}
+
 function farthestWalkablePointFromPlayer(mapKey) {
   return farthestWalkablePointFrom(mapKey, state.player);
 }
@@ -810,8 +924,8 @@ function chooseNextNpcTarget(npc) {
 
 
 function nextNpcStep(npc, occupied) {
-  if (isLawEnforcement(npc) && state.fires.some((fire) => fire.mapKey === npc.mapKey)) {
-    return nextPoliceFireStep(npc, occupied) ?? nextStepToward(npc, occupied);
+  if (isFirefighter(npc) && state.fires.some((fire) => fire.mapKey === npc.mapKey)) {
+    return nextFirefighterStep(npc, occupied) ?? nextStepToward(npc, occupied);
   }
   if (isLawEnforcement(npc) && state.gunfirePanic && npc.mapKey === state.currentMapKey) {
     return nextPoliceChaseStep(npc, occupied) ?? nextStepToward(npc, occupied);
@@ -820,7 +934,7 @@ function nextNpcStep(npc, occupied) {
 }
 
 
-function nextPoliceFireStep(npc, occupied) {
+function nextFirefighterStep(npc, occupied) {
   const nearestFire = closestFireTo(npc);
   if (!nearestFire) return null;
   const adjacentTargets = neighborsOf(nearestFire).filter((point) => !tileAtFor(npc.mapKey, point.x, point.y).blocks);
@@ -949,6 +1063,9 @@ function draw() {
   state.cars.filter((car) => car.mapKey === state.currentMapKey).forEach((car) => {
     if (visible.has(`${car.x},${car.y}`)) drawSprite(car.x, car.y, car.sprite, true);
   });
+  state.fireEngines.filter((engine) => engine.mapKey === state.currentMapKey).forEach((engine) => {
+    if (visible.has(`${engine.x},${engine.y}`)) drawSprite(engine.x, engine.y, engine.sprite, true);
+  });
   state.npcs.filter((npc) => npc.mapKey === state.currentMapKey).forEach((npc) => {
     if (visible.has(`${npc.x},${npc.y}`)) drawSprite(npc.x, npc.y, npcSprite(npc), true);
   });
@@ -975,6 +1092,7 @@ function visibleDrawBounds() {
 
 function npcSprite(npc) {
   if (npc.profile.key === 'stationMaster') return 'M';
+  if (isFirefighter(npc)) return 'firefighter';
   if (isLawEnforcement(npc)) return 'police';
   if (npc.profile.key === 'homelessPerson') return 'homeless';
   return `npc-${npc.profile.key}`;
@@ -1087,10 +1205,16 @@ function drawSprite(x, y, sprite, visible, desaturated = false, alpha = 1) {
     case 'C':
     case 'carLeft':
     case 'carRight':
+    case 'fireEngine':
       g.roundRect(px + 4, py + 9, 24, 14, 4).fill(tone(sprite === 'C' ? 0xa5adbb : 0xef4444));
       g.rect(px + 10, py + 5, 12, 7).fill(tone(0x79d2ff));
       g.circle(px + 10, py + 24, 3).fill(tone(0x15181f));
       g.circle(px + 23, py + 24, 3).fill(tone(0x15181f));
+      if (sprite === 'fireEngine') {
+        g.rect(px + 8, py + 12, 16, 3).fill(tone(0xf8fafc));
+        g.rect(px + 14, py + 6, 4, 8).fill(tone(0xf8fafc));
+        g.circle(px + 23, py + 7, 2).fill(tone(0x38bdf8));
+      }
       g.circle(px + (sprite === 'carLeft' ? 6 : 26), py + 16, 2).fill(tone(0xfef3c7));
       break;
     case 'S':
@@ -1205,6 +1329,15 @@ function drawSprite(x, y, sprite, visible, desaturated = false, alpha = 1) {
       g.circle(px + 16, py + 16, 4).fill(tone(0xf8fafc));
       g.circle(px + 16, py + 16, 2).fill(tone(0xfacc15));
       break;
+    case 'firefighter':
+      g.circle(px + 16, py + 8, 5).fill(tone(0xffc0a8));
+      g.rect(px + 9, py + 2, 14, 5).fill(tone(0xfacc15));
+      g.roundRect(px + 9, py + 14, 14, 12, 3).fill(tone(0xf97316));
+      g.rect(px + 11, py + 16, 10, 2).fill(tone(0xf8fafc));
+      g.rect(px + 6, py + 18, 20, 3).fill(tone(0x94a3b8));
+      g.rect(px + 9, py + 26, 5, 4).fill(tone(0x111827));
+      g.rect(px + 18, py + 26, 5, 4).fill(tone(0x111827));
+      break;
     case 'police':
       g.circle(px + 16, py + 8, 5).fill(tone(0xffc0a8));
       g.rect(px + 8, py + 3, 16, 5).fill(tone(0x111827));
@@ -1316,7 +1449,8 @@ function baseColorFor(sprite) {
   if (sprite === 'ashPile') return 0x292524;
   if (sprite === 'blood') return 0x000000;
   if (sprite === 'trainDoor') return 0x102338;
-  if (sprite === 'carLeft' || sprite === 'carRight') return 0x1f2933;
+  if (sprite === 'carLeft' || sprite === 'carRight' || sprite === 'fireEngine') return 0x1f2933;
+  if (sprite === 'firefighter') return 0x7c2d12;
   if (sprite === 'police') return 0x0f172a;
   if (sprite === 'homeless') return 0x4a2f1b;
   if (sprite.startsWith?.('npc-')) return characterClothingFor(sprite);
@@ -1377,6 +1511,10 @@ function tileAtFor(mapKey, x, y) {
 
 function npcAt(x, y) {
   return state.npcs.find((npc) => npc.mapKey === state.currentMapKey && npc.x === x && npc.y === y);
+}
+
+function npcAtOnMap(mapKey, x, y) {
+  return state.npcs.find((npc) => npc.mapKey === mapKey && npc.x === x && npc.y === y);
 }
 
 function carAt(x, y) {
