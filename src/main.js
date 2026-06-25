@@ -366,18 +366,18 @@ function isTrainDoorCell(grid, x, y) {
 }
 
 function stationDoorTile() {
-  return tileAtFor('station', 62, 8);
+  return tileAtFor('station', 94, 8);
 }
 
 function openStationDoor() {
   if (!stationDoorTile().lockedDoor) return;
-  setTileOverride('station', 62, 8, 'D');
+  setTileOverride('station', 94, 8, 'D');
   writeLog('The station master unlocks the side-room door with a bright brass click.');
 }
 
 function closeStationDoor() {
   if (stationDoorTile().lockedDoor) return;
-  setTileOverride('station', 62, 8, 'X');
+  setTileOverride('station', 94, 8, 'X');
   writeLog('The station master locks the side-room door again.');
   if (isPlayerInsideStationSideRoom()) {
     writeLog('You hear the lock turn somewhere above. You are still inside the station side room.');
@@ -387,8 +387,8 @@ function closeStationDoor() {
 function isPlayerInsideStationSideRoom() {
   if (state.currentMapKey === 'underground') return true;
   return state.currentMapKey === 'station'
-    && state.player.x >= 64
-    && state.player.x <= 73
+    && state.player.x >= 96
+    && state.player.x <= 105
     && state.player.y >= 7
     && state.player.y <= 11;
 }
@@ -571,12 +571,12 @@ function queueStationMasterDoorAction(action) {
   if (!master) return;
   master.pendingDoorActions = [...(master.pendingDoorActions ?? []), action];
   if (master.scoldingPlayer) return;
-  master.target = { x: 61, y: 8 };
-  if (master.x === 61 && master.y === 8) performStationMasterDoorActions(master);
+  master.target = { x: 93, y: 8 };
+  if (master.x === 93 && master.y === 8) performStationMasterDoorActions(master);
 }
 
 function resumeStationMasterDuties(npc) {
-  if (npc.pendingDoorActions?.length) return { ...npc, target: { x: 61, y: 8 }, preScoldTarget: null };
+  if (npc.pendingDoorActions?.length) return { ...npc, target: { x: 93, y: 8 }, preScoldTarget: null };
   return { ...npc, target: npc.preScoldTarget ?? npc.route[1] ?? npc.route[0], preScoldTarget: null };
 }
 
@@ -588,7 +588,7 @@ function performStationMasterDoorActions(npc) {
     if (action === 'close') closeStationDoor();
   });
   npc.pendingDoorActions = [];
-  npc.target = { x: 54, y: 8 };
+  npc.target = { x: 86, y: 8 };
 }
 
 function allMapNpcs() {
@@ -618,7 +618,7 @@ function createNpcRoute(npc, profile) {
   const start = { x: npc.x, y: npc.y };
 
   if (profile.routePreference === 'station master timed door') {
-    return [start, { x: 54, y: 8 }];
+    return [start, { x: 86, y: 8 }];
   }
 
   if (profile.routePreference === 'commuter to train' && trainStops.length) {

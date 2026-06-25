@@ -37,8 +37,8 @@ export function createItemDefinitions({ addLoopMinutes, fireGun, writeLog, draw 
 }
 
 export const placedItems = [
-  { id: 'pocket-watch', type: 'pocketWatch', mapKey: 'station', x: 23, y: 27 },
+  { id: 'pocket-watch', type: 'pocketWatch', mapKey: 'station', x: 55, y: 27 },
   { id: 'hidden-gun', type: 'gun', mapKey: 'underground', x: 8, y: 5 },
   { id: 'car-spawner-right', type: 'carSpawnerRight', mapKey: 'station', x: 0, y: 30, dx: 1 },
-  { id: 'car-spawner-left', type: 'carSpawnerLeft', mapKey: 'station', x: 79, y: 31, dx: -1 },
+  { id: 'car-spawner-left', type: 'carSpawnerLeft', mapKey: 'station', x: 143, y: 31, dx: -1 },
 ];
