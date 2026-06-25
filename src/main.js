@@ -631,7 +631,7 @@ function createNpcRoute(npc, profile) {
     return [shopStop, kioskStop];
   }
 
-  if (profile.routePreference === 'police station patrol' || profile.routePreference === 'police station guard') {
+  if (profile.routePreference === 'police station patrol' || profile.routePreference === 'police station guard' || profile.routePreference === 'homeless seated by shop') {
     return [start, start];
   }
 
@@ -789,8 +789,9 @@ function visibleDrawBounds() {
 
 function npcSprite(npc) {
   if (npc.profile.key === 'stationMaster') return 'M';
-  if (npc.profile.key === 'police' || npc.profile.key === 'policeGuard') return 'police';
-  return 'N';
+  if (isLawEnforcement(npc)) return 'police';
+  if (npc.profile.key === 'homelessPerson') return 'homeless';
+  return `npc-${npc.profile.key}`;
 }
 
 function drawItem(item, visible) {
@@ -1007,15 +1008,49 @@ function drawSprite(x, y, sprite, visible, desaturated = false, alpha = 1) {
       g.circle(px + 16, py + 16, 2).fill(tone(0xfacc15));
       break;
     case 'police':
+      g.circle(px + 16, py + 8, 5).fill(tone(0xffc0a8));
+      g.rect(px + 8, py + 3, 16, 5).fill(tone(0x111827));
+      g.rect(px + 10, py + 1, 12, 3).fill(tone(0x1d4ed8));
+      g.circle(px + 16, py + 4, 2).fill(tone(0xfacc15));
+      g.roundRect(px + 9, py + 14, 14, 12, 3).fill(tone(0x1d4ed8));
+      g.rect(px + 11, py + 16, 10, 2).fill(tone(0xf8fafc));
+      g.rect(px + 15, py + 14, 2, 12).fill(tone(0x0f172a));
+      g.circle(px + 12, py + 18, 1.5).fill(tone(0xfacc15));
+      g.rect(px + 6, py + 16, 4, 10).fill(tone(0x0f172a));
+      g.rect(px + 22, py + 16, 4, 10).fill(tone(0x0f172a));
+      g.rect(px + 9, py + 26, 5, 4).fill(tone(0x111827));
+      g.rect(px + 18, py + 26, 5, 4).fill(tone(0x111827));
+      break;
+    case 'homeless':
+      g.ellipse(px + 16, py + 11, 5, 4).fill(tone(0xd4a373));
+      g.roundRect(px + 8, py + 16, 16, 10, 4).fill(tone(0x8b5a2b));
+      g.rect(px + 6, py + 21, 20, 7).fill(tone(0x6b4226));
+      g.circle(px + 25, py + 22, 3).stroke({ color: tone(0xd1d5db), width: 1.5 });
+      g.rect(px + 11, py + 26, 5, 3).fill(tone(0x374151));
+      g.rect(px + 17, py + 26, 5, 3).fill(tone(0x374151));
+      break;
     case 'N':
     case 'M':
+    case 'npc-commuter':
+    case 'npc-shopkeeper':
+    case 'npc-tourist':
+    case 'npc-courier':
+    case 'npc-accountant':
+    case 'npc-janitor':
+    case 'npc-engineer':
+    case 'npc-intern':
+    case 'npc-solicitor':
+    case 'npc-inventor':
+    case 'npc-conductor':
+    case 'npc-violinist':
+    case 'npc-porter':
     case 'player':
     case 'playerGun':
-      g.circle(px + 16, py + 9, 5).fill(tone(sprite === 'player' || sprite === 'playerGun' ? 0x61dafb : (sprite === 'M' ? 0xbfdbfe : 0xffc0a8)));
-      if (sprite === 'police') g.rect(px + 10, py + 3, 12, 4).fill(tone(0x111827));
-      g.roundRect(px + 10, py + 15, 12, 11, 3).fill(tone(sprite === 'player' || sprite === 'playerGun' ? 0x1d8fb8 : (sprite === 'M' || sprite === 'police' ? 0x2563eb : 0xff8a65)));
+      g.circle(px + 16, py + 9, 5).fill(tone(characterSkinFor(sprite)));
+      g.roundRect(px + 10, py + 15, 12, 11, 3).fill(tone(characterClothingFor(sprite)));
       if (sprite === 'playerGun') g.rect(px + 21, py + 17, 8, 3).fill(tone(0x111827));
-      if (sprite === 'police') g.rect(px + 12, py + 17, 8, 2).fill(tone(0xf8fafc));
+      if (sprite === 'npc-courier') g.rect(px + 10, py + 4, 12, 3).fill(tone(0xfacc15));
+      if (sprite === 'npc-violinist') g.rect(px + 6, py + 21, 20, 3).fill(tone(0x7c2d12));
       g.rect(px + 8, py + 26, 6, 4).fill(tone(0x20242a));
       g.rect(px + 18, py + 26, 6, 4).fill(tone(0x20242a));
       break;
@@ -1043,6 +1078,38 @@ function drawReadableBadge(x, y) {
   world.addChild(g);
 }
 
+
+function characterSkinFor(sprite) {
+  return {
+    M: 0xbfdbfe,
+    'npc-tourist': 0xf9d4a9,
+    'npc-courier': 0xb7794f,
+    'npc-accountant': 0xf1c27d,
+    'npc-janitor': 0x8d5524,
+    'npc-engineer': 0xc68642,
+    'npc-solicitor': 0xe0ac69,
+  }[sprite] ?? (sprite === 'player' || sprite === 'playerGun' ? 0x61dafb : 0xffc0a8);
+}
+
+function characterClothingFor(sprite) {
+  return {
+    M: 0x2563eb,
+    'npc-commuter': 0x7c3aed,
+    'npc-shopkeeper': 0xf59e0b,
+    'npc-tourist': 0xec4899,
+    'npc-courier': 0x10b981,
+    'npc-accountant': 0x64748b,
+    'npc-janitor': 0xeab308,
+    'npc-engineer': 0x14b8a6,
+    'npc-intern': 0x22c55e,
+    'npc-solicitor': 0x334155,
+    'npc-inventor': 0xa16207,
+    'npc-conductor': 0x4338ca,
+    'npc-violinist': 0xbe123c,
+    'npc-porter': 0xdc2626,
+  }[sprite] ?? (sprite === 'player' || sprite === 'playerGun' ? 0x1d8fb8 : 0xff8a65);
+}
+
 function baseColorFor(sprite) {
   if (sprite === 'unknown') return 0x000000;
   if (sprite === 'player' || sprite === 'playerGun') return 0x264757;
@@ -1050,6 +1117,9 @@ function baseColorFor(sprite) {
   if (sprite === 'blood') return 0x000000;
   if (sprite === 'trainDoor') return 0x102338;
   if (sprite === 'carLeft' || sprite === 'carRight') return 0x1f2933;
+  if (sprite === 'police') return 0x0f172a;
+  if (sprite === 'homeless') return 0x4a2f1b;
+  if (sprite.startsWith?.('npc-')) return characterClothingFor(sprite);
   return terrain[sprite]?.color ?? 0x000000;
 }
 

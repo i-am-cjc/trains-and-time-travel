@@ -94,6 +94,26 @@ export const npcDefinitions = [
     routePreference: 'police station guard',
   },
   {
+    key: 'homelessPerson',
+    name: 'Robin Vale',
+    age: 49,
+    gender: 'man',
+    role: 'homeless person',
+    goal: 'sit near the shop doorway, collect enough change for a hot drink, and avoid being moved on before the loop resets',
+    gunfireReaction: 'scrambles away from the shopfront and runs for the safest corner he can find',
+    description: 'Robin Vale, 49, is a homeless person sitting near the shop with a patched blanket, a paper cup, and wary eyes trained on the repeating crowd.',
+    dialogue: [
+      'Robin Vale says, “Spare a coin for tea? The morning keeps coming back, but hunger does not reset kindly.”',
+      'Robin Vale lifts a paper cup. “If you can spare money, I can make this loop a little warmer.”',
+      'Robin Vale says, “My goal is just enough change for something hot before the station forgets me again.”',
+    ],
+    blockedRemarks: [
+      'Robin Vale gathers his blanket closer. “Mind the cup, please.”',
+      'Robin Vale says, “Easy there. I am sitting here.”',
+    ],
+    routePreference: 'homeless seated by shop',
+  },
+  {
     key: 'commuter',
     name: 'Mara Vale',
     age: 34,
@@ -317,6 +337,7 @@ export const npcDefinitions = [
 
 export const npcMapSymbols = {
   N: { defaultProfile: true },
+  H: { profileKey: 'homelessPerson', uniquePerMap: true },
   M: { profileKey: 'stationMaster', uniquePerMap: true },
   Z: { profileKey: 'police' },
   J: { profileKey: 'policeGuard' },
