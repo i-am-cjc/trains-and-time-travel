@@ -146,11 +146,7 @@ export function createCleanupLogic({
     const state = getState();
     hazard.status = 'cleaned';
     state.cleanupSigns = state.cleanupSigns.filter((sign) => sign.hazardId !== hazard.id);
-    if (hazard.type === 'ash') {
-      cleanAllAshPiles(hazard.mapKey);
-    } else {
-      state.ashPiles = state.ashPiles.filter((ash) => ash.id !== hazard.sourceId);
-    }
+    state.ashPiles = state.ashPiles.filter((ash) => ash.id !== hazard.sourceId);
     state.bloodPatches = state.bloodPatches.filter((blood) => blood.id !== hazard.sourceId);
     if (hazard.type === 'corpse') {
       const scene = state.crimeScenes.find((candidate) => candidate.corpseId === hazard.sourceId);
@@ -215,21 +211,9 @@ export function createCleanupLogic({
     return closestPoint(cleaner, neighborsOf(hazard).filter((point) => !tileAtFor(hazard.mapKey, point.x, point.y).blocks)) ?? hazard;
   }
 
-  function cleanAllAshPiles(mapKey) {
-    const state = getState();
-    const ashIds = new Set(state.ashPiles.filter((ash) => ash.mapKey === mapKey).map((ash) => ash.id));
-    state.ashPiles = state.ashPiles.filter((ash) => ash.mapKey !== mapKey);
-    state.hazardPoints.forEach((candidate) => {
-      if (candidate.type === 'ash' && ashIds.has(candidate.sourceId)) candidate.status = 'cleaned';
-    });
-    state.cleanupSigns = state.cleanupSigns.filter((sign) => {
-      const signHazard = state.hazardPoints.find((candidate) => candidate.id === sign.hazardId);
-      return signHazard?.type !== 'ash' || signHazard.mapKey !== mapKey;
-    });
-  }
 
   function cleanupFinishedMessage(hazard) {
-    if (hazard.type === 'ash') return 'The hazmat crew posts one cleanup sign, sweeps every ash pile from the area, then carries the sign away.';
+    if (hazard.type === 'ash') return 'The hazmat crew posts one cleanup sign, sweeps one ash pile from the tile, then carries the sign away.';
     return `The hazmat crew seals and scrubs ${hazardLabel(hazard)}, then carries the cleanup sign away.`;
   }
 
@@ -254,7 +238,7 @@ function cleanupDialogue(hazard) {
   const repeated = hazard.playerIncidentCount > 1;
   const repeatLine = repeated ? 'The cleaner says, “Same coordinates, same traveler-shaped problem. We are adding this to your file.”' : null;
   const byType = {
-    ash: 'The cleaner says, “Ash gets everywhere. One sign, one sweep, then the area is clear.”',
+    ash: 'The cleaner says, “Ash gets everywhere. One sign, one tile, then we move to the next mess.”',
     blood: 'The cleaner says, “Biohazard protocol. Do not step in the evidence, or what used to be evidence.”',
     corpse: 'The cleaner says, “Body is gone, but the tile remembers. We make it forget safely.”',
     'blocked-traffic': 'The cleaner says, “High-traffic obstruction. We post one sign, clear it, and move on.”',
