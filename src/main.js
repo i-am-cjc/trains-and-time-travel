@@ -4,6 +4,8 @@ import { createScheduledEvents } from './events.js';
 import { createItemDefinitions, placedItems } from './items.js';
 import { npcBlockedRemarks, npcDefinitions, npcMapSymbols } from './npcs.js';
 import { createFirefighterLogic, canExtinguishFire, isFirefighter } from './firefighters.js';
+import { createAmbulanceLogic, isParamedic } from './ambulances.js';
+import { createDetectiveLogic, isDetective } from './detectives.js';
 import { terrain } from './terrain.js';
 import './styles.css';
 
@@ -22,7 +24,6 @@ let inspectMode = false;
 let state;
 let loopCount = 0;
 let resetEffectTimeout;
-const bloodStains = new Set();
 const CAR_SPAWN_MINUTES = 5;
 const CAR_SPAWN_MAX_MINUTES = 15;
 const NPC_ROAD_PATH_COST = 20;
@@ -34,6 +35,18 @@ let moveFireEngines;
 let returningFireEngineFor;
 let fireEngineAt;
 let nextFirefighterStep;
+let updateAmbulanceResponse;
+let moveAmbulances;
+let updateParamedicCollection;
+let returningAmbulanceFor;
+let ambulanceAt;
+let nextParamedicStep;
+let updateDetectiveResponse;
+let movePoliceCars;
+let updateDetectiveSceneWork;
+let returningPoliceCarFor;
+let policeCarAt;
+let nextDetectiveStep;
 
 await app.init({ background: '#000000', resizeTo: document.querySelector('#game'), antialias: false });
 document.querySelector('#game').appendChild(app.canvas);
@@ -48,6 +61,37 @@ const maps = Object.fromEntries(await Promise.all(
   writeLog,
   killPlayer,
   closestFireTo,
+  nextVehicleStepToward,
+  nextStepToward,
+  manhattanDistance,
+  tileAtFor,
+  npcAtOnMap,
+  uniquePoints,
+  neighborsOf,
+  closestPoint,
+}));
+
+({ updateAmbulanceResponse, moveAmbulances, updateParamedicCollection, returningAmbulanceFor, ambulanceAt, nextParamedicStep } = createAmbulanceLogic({
+  getState: () => state,
+  maps,
+  writeLog,
+  killPlayer,
+  nextVehicleStepToward,
+  nextStepToward,
+  manhattanDistance,
+  tileAtFor,
+  npcAtOnMap,
+  uniquePoints,
+  neighborsOf,
+  closestPoint,
+  positionKey,
+  onCorpseCollected: markCorpseCollected,
+}));
+({ updateDetectiveResponse, movePoliceCars, updateDetectiveSceneWork, returningPoliceCarFor, policeCarAt, nextDetectiveStep } = createDetectiveLogic({
+  getState: () => state,
+  maps,
+  writeLog,
+  killPlayer,
   nextVehicleStepToward,
   nextStepToward,
   manhattanDistance,
@@ -115,6 +159,16 @@ function resetLoop(message, { effect = true } = {}) {
     nextCarId: 0,
     fireEngines: [],
     nextFireEngineId: 0,
+    ambulances: [],
+    nextAmbulanceId: 0,
+    policeCars: [],
+    nextPoliceCarId: 0,
+    corpses: [],
+    nextCorpseId: 0,
+    crimeScenes: [],
+    nextCrimeSceneId: 0,
+    chalkOutlines: [],
+    barriers: [],
     lastFireResponseSize: 0,
     carSpawnTimers: createCarSpawnTimers(),
     stationMasterScolding: false,
@@ -257,11 +311,17 @@ function spendMinute(message) {
   state.minutesLeft -= 1;
   runScheduledEvents();
   updateFireResponse();
+  updateAmbulanceResponse();
+  updateDetectiveResponse();
   updateFireTargets();
+  updateParamedicCollection();
+  updateDetectiveSceneWork();
   moveNpcs();
   if (updateFires()) return;
   updateFireResponse();
   if (moveFireEngines()) return;
+  if (moveAmbulances()) return;
+  if (movePoliceCars()) return;
   if (moveCars()) return;
   if (state.minutesLeft <= 0) return resetLoop('The two-hour loop expires. Everything snaps back to the moment you arrived.');
   draw();
@@ -339,7 +399,7 @@ function killNpcsHitByCars() {
 }
 
 function killNpc(npc, cause = 'is struck by a passing car and killed') {
-  bloodStains.add(`${npc.mapKey}:${positionKey(npc.x, npc.y)}`);
+  leaveCorpse(npc);
   writeLog(`${npc.profile.name} ${cause}.`);
   if (npc.profile.key === 'stationMaster') {
     state.stationMasterScolding = false;
@@ -504,6 +564,26 @@ function uniqueFirePoints(points) {
   });
 }
 
+function leaveCorpse(npc) {
+  const corpse = {
+    id: `corpse-${state.nextCorpseId}`,
+    mapKey: npc.mapKey,
+    x: npc.x,
+    y: npc.y,
+    name: npc.profile.name,
+  };
+  state.nextCorpseId += 1;
+  state.corpses.push(corpse);
+  const scene = { id: `crime-scene-${state.nextCrimeSceneId}`, corpseId: corpse.id, mapKey: corpse.mapKey, x: corpse.x, y: corpse.y, status: 'awaitingAmbulance' };
+  state.nextCrimeSceneId += 1;
+  state.crimeScenes.push(scene);
+}
+
+function markCorpseCollected(corpse) {
+  const scene = state.crimeScenes.find((candidate) => candidate.corpseId === corpse.id);
+  if (scene) scene.status = 'bodyCollected';
+}
+
 function manhattanDistance(a, b) {
   return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
 }
@@ -527,7 +607,6 @@ function arrestPlayer() {
 }
 
 function killPlayer(message) {
-  bloodStains.add(`${state.currentMapKey}:${positionKey(state.player.x, state.player.y)}`);
   resetLoop(message);
 }
 
@@ -663,7 +742,7 @@ function moveNpcs() {
 
   state.npcs = state.npcs.map((npc) => {
     let traveler = npc;
-    if (!state.gunfirePanic && traveler.x === traveler.target.x && traveler.y === traveler.target.y && !returningFireEngineFor(traveler)) {
+    if (!state.gunfirePanic && traveler.x === traveler.target.x && traveler.y === traveler.target.y && !returningFireEngineFor(traveler) && !returningAmbulanceFor(traveler) && !returningPoliceCarFor(traveler)) {
       traveler = chooseNextNpcTarget(traveler);
     }
 
@@ -687,8 +766,8 @@ function moveNpcs() {
     occupied.delete(`${traveler.mapKey}:${positionKey(traveler.x, traveler.y)}`);
     occupied.add(stepKey);
     const moved = { ...traveler, x: step.x, y: step.y, chaseAxis: step.chaseAxis ?? traveler.chaseAxis };
-    const returningEngine = returningFireEngineFor(moved);
-    if (returningEngine && moved.x === returningEngine.x && moved.y === returningEngine.y) {
+    const returningVehicle = returningFireEngineFor(moved) ?? returningAmbulanceFor(moved) ?? returningPoliceCarFor(moved);
+    if (returningVehicle && moved.x === returningVehicle.x && moved.y === returningVehicle.y) {
       occupied.delete(stepKey);
       return null;
     }
@@ -885,6 +964,8 @@ function chooseNextNpcTarget(npc) {
 
 
 function nextNpcStep(npc, occupied) {
+  if (isParamedic(npc)) return nextParamedicStep(npc, occupied) ?? nextStepToward(npc, occupied);
+  if (isDetective(npc)) return nextDetectiveStep(npc, occupied) ?? nextStepToward(npc, occupied);
   if (isFirefighter(npc) && state.fires.some((fire) => fire.mapKey === npc.mapKey)) {
     return nextFirefighterStep(npc, occupied) ?? nextStepToward(npc, occupied);
   }
@@ -1020,6 +1101,15 @@ function draw() {
     .forEach((item) => {
       if (visible.has(`${item.x},${item.y}`)) drawItem(item, true);
     });
+  state.chalkOutlines.filter((outline) => outline.mapKey === state.currentMapKey).forEach((outline) => {
+    if (visible.has(`${outline.x},${outline.y}`)) drawSprite(outline.x, outline.y, 'chalkOutline', true);
+  });
+  state.barriers.filter((barrier) => barrier.mapKey === state.currentMapKey).forEach((barrier) => {
+    if (visible.has(`${barrier.x},${barrier.y}`)) drawSprite(barrier.x, barrier.y, 'barrier', true);
+  });
+  state.corpses.filter((corpse) => corpse.mapKey === state.currentMapKey).forEach((corpse) => {
+    if (visible.has(`${corpse.x},${corpse.y}`)) drawSprite(corpse.x, corpse.y, 'corpse', true);
+  });
   state.ashPiles.filter((ashPile) => ashPile.mapKey === state.currentMapKey).forEach((ashPile) => {
     if (visible.has(`${ashPile.x},${ashPile.y}`)) drawSprite(ashPile.x, ashPile.y, 'ashPile', true);
   });
@@ -1027,6 +1117,12 @@ function draw() {
     if (visible.has(`${fire.x},${fire.y}`)) drawSprite(fire.x, fire.y, 'fire', true);
   });
   state.cars.filter((car) => car.mapKey === state.currentMapKey).forEach((car) => {
+    if (visible.has(`${car.x},${car.y}`)) drawSprite(car.x, car.y, car.sprite, true);
+  });
+  state.ambulances.filter((ambulance) => ambulance.mapKey === state.currentMapKey).forEach((ambulance) => {
+    if (visible.has(`${ambulance.x},${ambulance.y}`)) drawSprite(ambulance.x, ambulance.y, ambulance.sprite, true);
+  });
+  state.policeCars.filter((car) => car.mapKey === state.currentMapKey).forEach((car) => {
     if (visible.has(`${car.x},${car.y}`)) drawSprite(car.x, car.y, car.sprite, true);
   });
   state.fireEngines.filter((engine) => engine.mapKey === state.currentMapKey).forEach((engine) => {
@@ -1059,6 +1155,8 @@ function visibleDrawBounds() {
 function npcSprite(npc) {
   if (npc.profile.key === 'stationMaster') return 'M';
   if (isFirefighter(npc)) return 'firefighter';
+  if (isParamedic(npc)) return 'paramedic';
+  if (isDetective(npc)) return 'detective';
   if (isLawEnforcement(npc)) return 'police';
   if (npc.profile.key === 'homelessPerson') return 'homeless';
   return `npc-${npc.profile.key}`;
@@ -1082,7 +1180,6 @@ function drawTile(x, y, isVisible) {
   const rememberedOnly = remembered && !isVisible;
   if (!isVisible && !remembered) return drawSprite(x, y, 'unknown', true);
   drawSprite(x, y, isTrainDoor(x, y) ? 'trainDoor' : map.grid[y][x], true, rememberedOnly, rememberedOnly ? 0.67 : 1);
-  if (bloodStains.has(`${state.currentMapKey}:${positionKey(x, y)}`)) drawSprite(x, y, 'blood', true, rememberedOnly, rememberedOnly ? 0.67 : 1);
   if (isVisible && tileAt(x, y).readableText) drawReadableBadge(x, y);
 }
 
@@ -1172,7 +1269,9 @@ function drawSprite(x, y, sprite, visible, desaturated = false, alpha = 1) {
     case 'carLeft':
     case 'carRight':
     case 'fireEngine':
-      g.roundRect(px + 4, py + 9, 24, 14, 4).fill(tone(sprite === 'C' ? 0xa5adbb : 0xef4444));
+    case 'ambulance':
+    case 'policeCar':
+      g.roundRect(px + 4, py + 9, 24, 14, 4).fill(tone(vehicleColorFor(sprite)));
       g.rect(px + 10, py + 5, 12, 7).fill(tone(0x79d2ff));
       g.circle(px + 10, py + 24, 3).fill(tone(0x15181f));
       g.circle(px + 23, py + 24, 3).fill(tone(0x15181f));
@@ -1180,6 +1279,16 @@ function drawSprite(x, y, sprite, visible, desaturated = false, alpha = 1) {
         g.rect(px + 8, py + 12, 16, 3).fill(tone(0xf8fafc));
         g.rect(px + 14, py + 6, 4, 8).fill(tone(0xf8fafc));
         g.circle(px + 23, py + 7, 2).fill(tone(0x38bdf8));
+      }
+      if (sprite === 'ambulance') {
+        g.rect(px + 8, py + 12, 16, 3).fill(tone(0xef4444));
+        g.rect(px + 14, py + 7, 4, 13).fill(tone(0xef4444));
+        g.circle(px + 23, py + 7, 2).fill(tone(0x38bdf8));
+      }
+      if (sprite === 'policeCar') {
+        g.rect(px + 5, py + 13, 22, 3).fill(tone(0xf8fafc));
+        g.circle(px + 14, py + 7, 2).fill(tone(0xef4444));
+        g.circle(px + 19, py + 7, 2).fill(tone(0x38bdf8));
       }
       g.circle(px + (sprite === 'carLeft' ? 6 : 26), py + 16, 2).fill(tone(0xfef3c7));
       break;
@@ -1295,12 +1404,43 @@ function drawSprite(x, y, sprite, visible, desaturated = false, alpha = 1) {
       g.circle(px + 16, py + 16, 4).fill(tone(0xf8fafc));
       g.circle(px + 16, py + 16, 2).fill(tone(0xfacc15));
       break;
+    case 'corpse':
+      g.ellipse(px + 16, py + 20, 11, 5).fill(tone(0x111827));
+      g.circle(px + 8, py + 18, 4).fill(tone(0xffc0a8));
+      g.rect(px + 12, py + 16, 14, 5).fill(tone(0x334155));
+      break;
+    case 'chalkOutline':
+      g.ellipse(px + 16, py + 20, 11, 5).stroke({ color: tone(0xf8fafc), width: 2 });
+      g.circle(px + 8, py + 18, 4).stroke({ color: tone(0xf8fafc), width: 2 });
+      break;
+    case 'barrier':
+      g.rect(px + 3, py + 12, 26, 4).fill(tone(0xfacc15));
+      g.rect(px + 3, py + 19, 26, 4).fill(tone(0xfacc15));
+      g.rect(px + 5, py + 12, 4, 11).fill(tone(0x111827));
+      g.rect(px + 22, py + 12, 4, 11).fill(tone(0x111827));
+      break;
     case 'firefighter':
       g.circle(px + 16, py + 8, 5).fill(tone(0xffc0a8));
       g.rect(px + 9, py + 2, 14, 5).fill(tone(0xfacc15));
       g.roundRect(px + 9, py + 14, 14, 12, 3).fill(tone(0xf97316));
       g.rect(px + 11, py + 16, 10, 2).fill(tone(0xf8fafc));
       g.rect(px + 6, py + 18, 20, 3).fill(tone(0x94a3b8));
+      g.rect(px + 9, py + 26, 5, 4).fill(tone(0x111827));
+      g.rect(px + 18, py + 26, 5, 4).fill(tone(0x111827));
+      break;
+    case 'paramedic':
+      g.circle(px + 16, py + 8, 5).fill(tone(0xffc0a8));
+      g.roundRect(px + 9, py + 14, 14, 12, 3).fill(tone(0xf8fafc));
+      g.rect(px + 11, py + 16, 10, 2).fill(tone(0xef4444));
+      g.rect(px + 15, py + 14, 2, 12).fill(tone(0xef4444));
+      g.rect(px + 9, py + 26, 5, 4).fill(tone(0x111827));
+      g.rect(px + 18, py + 26, 5, 4).fill(tone(0x111827));
+      break;
+    case 'detective':
+      g.circle(px + 16, py + 8, 5).fill(tone(0xffc0a8));
+      g.rect(px + 9, py + 3, 14, 4).fill(tone(0x4b5563));
+      g.roundRect(px + 9, py + 14, 14, 12, 3).fill(tone(0x334155));
+      g.rect(px + 12, py + 14, 8, 12).fill(tone(0x94a3b8));
       g.rect(px + 9, py + 26, 5, 4).fill(tone(0x111827));
       g.rect(px + 18, py + 26, 5, 4).fill(tone(0x111827));
       break;
@@ -1407,17 +1547,25 @@ function characterClothingFor(sprite) {
   }[sprite] ?? (sprite === 'player' || sprite === 'playerGun' ? 0x1d8fb8 : 0xff8a65);
 }
 
+function vehicleColorFor(sprite) {
+  if (sprite === 'C') return 0xa5adbb;
+  if (sprite === 'ambulance') return 0xf8fafc;
+  if (sprite === 'policeCar') return 0x1d4ed8;
+  return 0xef4444;
+}
+
 function baseColorFor(sprite) {
   if (sprite === 'unknown') return 0x000000;
   if (sprite === 'player' || sprite === 'playerGun') return 0x264757;
   if (sprite === 'bullet') return 0x000000;
   if (sprite === 'fire') return 0x451a03;
   if (sprite === 'ashPile') return 0x292524;
-  if (sprite === 'blood') return 0x000000;
+  if (sprite === 'corpse' || sprite === 'chalkOutline' || sprite === 'barrier') return 0x000000;
   if (sprite === 'trainDoor') return 0x102338;
-  if (sprite === 'carLeft' || sprite === 'carRight' || sprite === 'fireEngine') return 0x1f2933;
+  if (sprite === 'carLeft' || sprite === 'carRight' || sprite === 'fireEngine' || sprite === 'ambulance' || sprite === 'policeCar') return 0x1f2933;
   if (sprite === 'firefighter') return 0x7c2d12;
-  if (sprite === 'police') return 0x0f172a;
+  if (sprite === 'paramedic') return 0xf8fafc;
+  if (sprite === 'detective' || sprite === 'police') return 0x0f172a;
   if (sprite === 'homeless') return 0x4a2f1b;
   if (sprite.startsWith?.('npc-')) return characterClothingFor(sprite);
   return terrain[sprite]?.color ?? 0x000000;
@@ -1580,9 +1728,9 @@ function finishBullet(shot) {
     return;
   }
 
-  bloodStains.add(`${shot.hitNpc.mapKey}:${positionKey(shot.hitNpc.x, shot.hitNpc.y)}`);
   state.npcs = state.npcs.filter((npc) => npc !== shot.hitNpc);
-  writeLog(`The bullet hits ${shot.hitNpc.profile.name}. A blood stain remains in every loop. ${gunfireReactionSummary(shot.hitNpc)}`);
+  leaveCorpse(shot.hitNpc);
+  writeLog(`The bullet hits ${shot.hitNpc.profile.name}. A corpse falls to the ground. ${gunfireReactionSummary(shot.hitNpc)}`);
   draw();
 }
 
