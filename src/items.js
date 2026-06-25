@@ -25,7 +25,7 @@ export function createItemDefinitions({ addLoopMinutes, fireGun, igniteFire, wri
     },
     lighter: {
       name: 'Lighter',
-      description: 'A battered petrol lighter. Use it to ignite the tile in front of you; flames spread every two moves but cannot burn buildings.',
+      description: 'A battered petrol lighter. Use it to ignite the tile in front of you; flames spread to one random nearby tile every 2-4 moves but cannot burn buildings.',
       color: 0xf97316,
       reusable: true,
       effect: () => {

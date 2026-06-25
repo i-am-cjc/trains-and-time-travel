@@ -24,6 +24,8 @@ let resetEffectTimeout;
 const bloodStains = new Set();
 const CAR_SPAWN_MINUTES = 5;
 const CAR_SPAWN_MAX_MINUTES = 15;
+const FIRE_SPREAD_MIN_TURNS = 2;
+const FIRE_SPREAD_MAX_TURNS = 4;
 
 const itemDefinitions = createItemDefinitions({ addLoopMinutes, fireGun, igniteFire, writeLog, draw });
 const scheduledEvents = createScheduledEvents({ updateTerrain, moveItem, writeLog, queueStationMasterDoorAction });
@@ -99,7 +101,7 @@ function resetLoop(message, { effect = true } = {}) {
     bullet: null,
     arrested: false,
     fires: [],
-    fireSpreadCountdown: 2,
+    fireSpreadCountdown: nextFireSpreadDelay(),
   };
   state.npcs = allMapNpcs().map(createNpcState);
   seedRoadTraffic();
@@ -332,7 +334,7 @@ function igniteFire() {
   }
 
   addFire(state.currentMapKey, target.x, target.y);
-  writeLog('You flick the lighter and start a hungry fire. It will spread every two moves, curling around anything it cannot burn.');
+  writeLog('You flick the lighter and start a hungry fire. Every few moves, one random neighboring tile may catch.');
   draw();
 }
 
@@ -348,20 +350,23 @@ function updateFires() {
   state.fireSpreadCountdown -= 1;
   if (state.fireSpreadCountdown > 0) return false;
 
-  state.fireSpreadCountdown = 2;
-  const newFires = [];
-  state.fires.forEach((fire) => {
-    neighborsOf(fire).forEach((neighbor) => {
-      if (canBurn(fire.mapKey, neighbor.x, neighbor.y)) newFires.push({ mapKey: fire.mapKey, ...neighbor });
-    });
-  });
-  uniqueFirePoints(newFires).forEach((fire) => addFire(fire.mapKey, fire.x, fire.y));
+  state.fireSpreadCountdown = nextFireSpreadDelay();
+  const nextFire = randomItem(uniqueFirePoints(state.fires.flatMap((fire) => (
+    neighborsOf(fire)
+      .filter((neighbor) => canBurn(fire.mapKey, neighbor.x, neighbor.y))
+      .map((neighbor) => ({ mapKey: fire.mapKey, ...neighbor }))
+  ))));
+  if (nextFire) addFire(nextFire.mapKey, nextFire.x, nextFire.y);
   killNpcsCaughtInFire();
   if (isFireAt(state.currentMapKey, state.player.x, state.player.y)) {
     killPlayer('The spreading fire overtakes you. The loop snaps back through smoke.');
     return true;
   }
   return false;
+}
+
+function nextFireSpreadDelay() {
+  return randomInteger(FIRE_SPREAD_MIN_TURNS, FIRE_SPREAD_MAX_TURNS);
 }
 
 function updateFireTargets() {
