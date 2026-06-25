@@ -476,7 +476,7 @@ function moveNpcs() {
       traveler = chooseNextNpcTarget(traveler);
     }
 
-    const step = nextStepToward(traveler, occupied);
+    const step = nextNpcStep(traveler, occupied);
     if (!step) return traveler;
 
     if (traveler.mapKey === state.currentMapKey && step.x === state.player.x && step.y === state.player.y) {
@@ -495,7 +495,7 @@ function moveNpcs() {
 
     occupied.delete(`${traveler.mapKey}:${positionKey(traveler.x, traveler.y)}`);
     occupied.add(stepKey);
-    const moved = { ...traveler, x: step.x, y: step.y };
+    const moved = { ...traveler, x: step.x, y: step.y, chaseAxis: step.chaseAxis ?? traveler.chaseAxis };
     handleNpcArrival(moved);
     return moved;
   });
@@ -675,6 +675,42 @@ function chooseNextNpcTarget(npc) {
   const currentTargetIndex = npc.route.findIndex((point) => point.x === npc.target.x && point.y === npc.target.y);
   const nextTarget = npc.route[currentTargetIndex === 0 ? 1 : 0];
   return { ...npc, target: nextTarget };
+}
+
+
+function nextNpcStep(npc, occupied) {
+  if (isLawEnforcement(npc) && state.gunfirePanic && npc.mapKey === state.currentMapKey) {
+    return nextPoliceChaseStep(npc, occupied) ?? nextStepToward(npc, occupied);
+  }
+  return nextStepToward(npc, occupied);
+}
+
+function nextPoliceChaseStep(npc, occupied) {
+  const dx = state.player.x - npc.x;
+  const dy = state.player.y - npc.y;
+  if (dx === 0 || dy === 0) return null;
+
+  const preferredAxes = npc.chaseAxis === 'horizontal'
+    ? ['vertical', 'horizontal']
+    : ['horizontal', 'vertical'];
+
+  for (const axis of preferredAxes) {
+    const step = chaseStepOnAxis(npc, axis, dx, dy, occupied);
+    if (step) return { ...step, chaseAxis: axis };
+  }
+
+  return null;
+}
+
+function chaseStepOnAxis(npc, axis, dx, dy, occupied) {
+  const step = axis === 'horizontal'
+    ? { x: npc.x + Math.sign(dx), y: npc.y }
+    : { x: npc.x, y: npc.y + Math.sign(dy) };
+  const key = `${npc.mapKey}:${positionKey(step.x, step.y)}`;
+  const targetKey = `${npc.mapKey}:${positionKey(npc.target.x, npc.target.y)}`;
+  if (tileAtFor(npc.mapKey, step.x, step.y).blocks) return null;
+  if (occupied.has(key) && key !== targetKey) return null;
+  return step;
 }
 
 function nextStepToward(npc, occupied) {
