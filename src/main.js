@@ -699,7 +699,7 @@ function leaveCorpse(npc, { roadTrafficBlock = false } = {}) {
   addBloodPatch(corpse);
   trackHazardPoint('corpse', corpse);
   if (tileAtFor(corpse.mapKey, corpse.x, corpse.y).road) trackHazardPoint('blocked-traffic', corpse);
-  const scene = { id: `crime-scene-${state.nextCrimeSceneId}`, corpseId: corpse.id, mapKey: corpse.mapKey, x: corpse.x, y: corpse.y, status: 'awaitingAmbulance', detectiveDispatchMinute: null, roadTrafficBlock: roadTrafficBlock && tileAtFor(corpse.mapKey, corpse.x, corpse.y).road };
+  const scene = { id: `crime-scene-${state.nextCrimeSceneId}`, corpseId: corpse.id, mapKey: corpse.mapKey, x: corpse.x, y: corpse.y, status: 'awaitingAmbulance', detectiveDispatchMinute: null, roadTrafficBlock: roadTrafficBlock && tileAtFor(corpse.mapKey, corpse.x, corpse.y).road, trafficClearMinute: null };
   state.nextCrimeSceneId += 1;
   state.crimeScenes.push(scene);
 }
