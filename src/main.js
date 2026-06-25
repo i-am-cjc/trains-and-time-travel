@@ -377,13 +377,26 @@ function recallFirefighters() {
     if (engine.status !== 'deployed') return;
     const crew = state.npcs.filter((npc) => npc.homeEngineId === engine.id);
     crew.forEach((npc) => { npc.target = { x: engine.x, y: engine.y }; });
-    if (crew.every((npc) => manhattanDistance(npc, engine) <= 1)) {
-      const crewKeys = new Set(crew.map((npc) => npc.profile.key));
-      state.npcs = state.npcs.filter((npc) => !crewKeys.has(npc.profile.key));
+    removeFirefightersAtEngine(engine);
+    if (!state.npcs.some((npc) => npc.homeEngineId === engine.id)) {
       engine.status = 'returning';
       writeLog('With the fire out, the firefighters climb back aboard and the engine returns to the road.');
     }
   });
+}
+
+function removeFirefightersAtEngine(engine) {
+  state.npcs = state.npcs.filter((npc) => (
+    npc.homeEngineId !== engine.id
+    || npc.mapKey !== engine.mapKey
+    || npc.x !== engine.x
+    || npc.y !== engine.y
+  ));
+}
+
+function returningFireEngineFor(npc) {
+  if (!isFirefighter(npc) || state.fires.some((fire) => fire.mapKey === npc.mapKey)) return null;
+  return state.fireEngines.find((engine) => engine.id === npc.homeEngineId && engine.status === 'deployed') ?? null;
 }
 
 function fireEngineAt(x, y) {
@@ -746,7 +759,7 @@ function moveNpcs() {
 
   state.npcs = state.npcs.map((npc) => {
     let traveler = npc;
-    if (!state.gunfirePanic && traveler.x === traveler.target.x && traveler.y === traveler.target.y) {
+    if (!state.gunfirePanic && traveler.x === traveler.target.x && traveler.y === traveler.target.y && !returningFireEngineFor(traveler)) {
       traveler = chooseNextNpcTarget(traveler);
     }
 
@@ -770,9 +783,14 @@ function moveNpcs() {
     occupied.delete(`${traveler.mapKey}:${positionKey(traveler.x, traveler.y)}`);
     occupied.add(stepKey);
     const moved = { ...traveler, x: step.x, y: step.y, chaseAxis: step.chaseAxis ?? traveler.chaseAxis };
+    const returningEngine = returningFireEngineFor(moved);
+    if (returningEngine && moved.x === returningEngine.x && moved.y === returningEngine.y) {
+      occupied.delete(stepKey);
+      return null;
+    }
     handleNpcArrival(moved);
     return moved;
-  });
+  }).filter(Boolean);
 
   const playerArrested = !state.arrested && state.npcs.some((npc) => npc.arrestingPlayer);
   if (playerArrested) {
