@@ -28,6 +28,8 @@ let loopCount = 0;
 let resetEffectTimeout;
 const CAR_SPAWN_MINUTES = 5;
 const CAR_SPAWN_MAX_MINUTES = 15;
+const TRAFFIC_VEHICLE_TYPES = ['car', 'pickup', 'bus', 'lorry', 'motorbike'];
+const TRAFFIC_VEHICLE_COLORS = [0xef4444, 0x2563eb, 0x16a34a, 0xf97316, 0xeab308, 0x7c3aed, 0xec4899, 0xf8fafc, 0x94a3b8];
 const NPC_ROAD_PATH_COST = 20;
 const GUNFIRE_PANIC_TURNS = 20;
 
@@ -415,6 +417,7 @@ function spawnCar(spawner) {
   const mapKey = spawner.mapKey ?? 'station';
   if (state.fireEngineDispatchedThisTurn || trafficQueuedToSpawner(spawner)) return false;
   if (carAtOnMap(mapKey, spawner.x, spawner.y)) return false;
+  const visual = randomTrafficVehicleVisual();
   state.cars.push({
     id: `car-${state.nextCarId}`,
     mapKey,
@@ -422,9 +425,16 @@ function spawnCar(spawner) {
     y: spawner.y,
     dx: spawner.dx,
     sprite: spawner.dx < 0 ? 'carLeft' : 'carRight',
+    visual,
   });
   state.nextCarId += 1;
   return true;
+}
+
+function randomTrafficVehicleVisual() {
+  const type = TRAFFIC_VEHICLE_TYPES[randomInteger(0, TRAFFIC_VEHICLE_TYPES.length - 1)];
+  const color = TRAFFIC_VEHICLE_COLORS[randomInteger(0, TRAFFIC_VEHICLE_COLORS.length - 1)];
+  return { type, color };
 }
 
 function nextCarSpawnDelay() {
@@ -1304,7 +1314,7 @@ function draw() {
     if (visible.has(`${wreck.x},${wreck.y}`)) drawSprite(wreck.x, wreck.y, 'wreck', true);
   });
   state.cars.filter((car) => car.mapKey === state.currentMapKey).forEach((car) => {
-    if (visible.has(`${car.x},${car.y}`)) drawSprite(car.x, car.y, car.sprite, true);
+    if (visible.has(`${car.x},${car.y}`)) drawSprite(car.x, car.y, car.sprite, true, false, 1, car.visual);
   });
   state.ambulances.filter((ambulance) => ambulance.mapKey === state.currentMapKey).forEach((ambulance) => {
     if (visible.has(`${ambulance.x},${ambulance.y}`)) drawSprite(ambulance.x, ambulance.y, ambulance.sprite, true);
@@ -1378,7 +1388,7 @@ function drawTile(x, y, isVisible) {
 }
 
 
-function drawSprite(x, y, sprite, visible, desaturated = false, alpha = 1) {
+function drawSprite(x, y, sprite, visible, desaturated = false, alpha = 1, visual = null) {
   const g = new Graphics();
   g.alpha = alpha;
   const tone = (color) => (desaturated ? desaturate(color) : color);
@@ -1467,11 +1477,9 @@ function drawSprite(x, y, sprite, visible, desaturated = false, alpha = 1) {
     case 'ambulance':
     case 'policeCar':
     case 'cleanupVan':
-    case 'recoveryWagon':
-      g.roundRect(px + 4, py + 9, 24, 14, 4).fill(tone(vehicleColorFor(sprite)));
-      g.rect(px + 10, py + 5, 12, 7).fill(tone(0x79d2ff));
-      g.circle(px + 10, py + 24, 3).fill(tone(0x15181f));
-      g.circle(px + 23, py + 24, 3).fill(tone(0x15181f));
+    case 'recoveryWagon': {
+      const trafficVisual = sprite === 'carLeft' || sprite === 'carRight' ? visual : null;
+      drawVehicleBody(g, px, py, sprite, tone, trafficVisual);
       if (sprite === 'wreck') {
         g.rect(px + 7, py + 11, 18, 8).fill(tone(0x111827));
         g.rect(px + 12, py + 6, 9, 5).fill(tone(0x4b5563));
@@ -1502,6 +1510,7 @@ function drawSprite(x, y, sprite, visible, desaturated = false, alpha = 1) {
       }
       g.circle(px + (sprite === 'carLeft' ? 6 : 26), py + 16, 2).fill(tone(0xfef3c7));
       break;
+    }
     case 'S':
       g.rect(px + 5, py + 7, 22, 18).fill(tone(0xa855f7));
       g.rect(px + 7, py + 9, 18, 6).fill(tone(0xe8dcff));
@@ -1770,6 +1779,53 @@ function characterClothingFor(sprite) {
     'npc-violinist': 0xbe123c,
     'npc-porter': 0xdc2626,
   }[sprite] ?? (sprite === 'player' || sprite === 'playerGun' ? 0x1d8fb8 : 0xff8a65);
+}
+
+function drawVehicleBody(g, px, py, sprite, tone, visual = null) {
+  const type = visual?.type ?? 'car';
+  const color = visual?.color ?? vehicleColorFor(sprite);
+  const dark = tone(0x15181f);
+  const glass = tone(0x79d2ff);
+
+  if (type === 'motorbike') {
+    g.rect(px + 10, py + 14, 12, 4).fill(tone(color));
+    g.rect(px + 14, py + 10, 5, 5).fill(glass);
+    g.circle(px + 9, py + 22, 3).fill(dark);
+    g.circle(px + 23, py + 22, 3).fill(dark);
+    return;
+  }
+
+  if (type === 'bus') {
+    g.roundRect(px + 2, py + 8, 28, 15, 3).fill(tone(color));
+    g.rect(px + 5, py + 10, 20, 5).fill(glass);
+    g.rect(px + 25, py + 10, 3, 10).fill(tone(0x1f2937));
+    g.circle(px + 8, py + 24, 3).fill(dark);
+    g.circle(px + 24, py + 24, 3).fill(dark);
+    return;
+  }
+
+  if (type === 'lorry') {
+    g.roundRect(px + 3, py + 10, 16, 12, 2).fill(tone(color));
+    g.roundRect(px + 18, py + 7, 11, 15, 3).fill(tone(0xe5e7eb));
+    g.rect(px + 21, py + 9, 5, 5).fill(glass);
+    g.circle(px + 9, py + 24, 3).fill(dark);
+    g.circle(px + 24, py + 24, 3).fill(dark);
+    return;
+  }
+
+  if (type === 'pickup') {
+    g.roundRect(px + 4, py + 10, 24, 13, 3).fill(tone(color));
+    g.rect(px + 8, py + 13, 8, 5).fill(tone(0x374151));
+    g.rect(px + 18, py + 6, 8, 7).fill(glass);
+    g.circle(px + 9, py + 24, 3).fill(dark);
+    g.circle(px + 24, py + 24, 3).fill(dark);
+    return;
+  }
+
+  g.roundRect(px + 4, py + 9, 24, 14, 4).fill(tone(color));
+  g.rect(px + 10, py + 5, 12, 7).fill(glass);
+  g.circle(px + 10, py + 24, 3).fill(dark);
+  g.circle(px + 23, py + 24, 3).fill(dark);
 }
 
 function vehicleColorFor(sprite) {
