@@ -334,12 +334,14 @@ function moveFireEngines() {
 
 function moveFireEngine(engine) {
   if (engine.status === 'leaving') return { ...engine, x: engine.x + 1 };
+  if (engine.status === 'returning') return moveFireEngineBackToRoad(engine);
   if (engine.status === 'deployed') return engine;
 
   const nearestFire = closestFireTo({ mapKey: engine.mapKey, x: engine.x, y: engine.y });
-  if (!nearestFire) return { ...engine, status: 'leaving' };
+  if (!nearestFire) return { ...engine, status: 'returning' };
   const step = nextVehicleStepToward({ ...engine, target: nearestFire });
-  const moved = { ...engine, ...(step ?? { x: engine.x + engine.dx, y: engine.y }), targetFire: { ...nearestFire } };
+  if (!step) return engine;
+  const moved = { ...engine, ...step, targetFire: { ...nearestFire } };
   if (manhattanDistance(moved, nearestFire) <= FIRE_ENGINE_RESPONSE_DISTANCE) {
     deployFirefighters(moved);
     writeLog('The fire engine brakes near the fire and six firefighters leap out with hoses.');
@@ -378,8 +380,8 @@ function recallFirefighters() {
     if (crew.every((npc) => manhattanDistance(npc, engine) <= 1)) {
       const crewKeys = new Set(crew.map((npc) => npc.profile.key));
       state.npcs = state.npcs.filter((npc) => !crewKeys.has(npc.profile.key));
-      engine.status = 'leaving';
-      writeLog('With the fire out, the firefighters climb back aboard and the engine pulls away to the right.');
+      engine.status = 'returning';
+      writeLog('With the fire out, the firefighters climb back aboard and the engine returns to the road.');
     }
   });
 }
@@ -537,7 +539,6 @@ function extinguishAdjacentFires() {
     if (extinguished.has(`${fire.mapKey}:${positionKey(fire.x, fire.y)}`)) addAshPile(fire.mapKey, fire.x, fire.y);
   });
   state.fires = state.fires.filter((fire) => !extinguished.has(`${fire.mapKey}:${positionKey(fire.x, fire.y)}`));
-  writeLog('A firefighter opens a hose and beats back part of the blaze.');
 }
 
 function killNpcsCaughtInFire() {
@@ -1052,6 +1053,20 @@ function nextStepToward(npc, occupied, { avoidFire = !isLawEnforcement(npc), avo
     previous = cameFrom.get(positionKey(previous.x, previous.y));
   }
   return { x: step.x, y: step.y };
+}
+
+function moveFireEngineBackToRoad(engine) {
+  if (tileAtFor(engine.mapKey, engine.x, engine.y).road) return { ...engine, status: 'leaving' };
+  const target = closestRoadPoint(engine);
+  if (!target) return { ...engine, status: 'leaving' };
+  const step = nextVehicleStepToward({ ...engine, target });
+  if (!step) return engine;
+  const moved = { ...engine, ...step };
+  return tileAtFor(moved.mapKey, moved.x, moved.y).road ? { ...moved, status: 'leaving' } : moved;
+}
+
+function closestRoadPoint(point) {
+  return closestPoint(point, maps[point.mapKey].walkable.filter((tile) => tileAtFor(point.mapKey, tile.x, tile.y).road));
 }
 
 function nextVehicleStepToward(vehicle) {
