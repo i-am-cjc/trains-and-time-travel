@@ -24,8 +24,6 @@ let resetEffectTimeout;
 const bloodStains = new Set();
 const CAR_SPAWN_MINUTES = 5;
 const CAR_SPAWN_MAX_MINUTES = 15;
-const FIRE_SPREAD_MIN_TURNS = 2;
-const FIRE_SPREAD_MAX_TURNS = 4;
 
 const itemDefinitions = createItemDefinitions({ addLoopMinutes, fireGun, igniteFire, writeLog, draw });
 const scheduledEvents = createScheduledEvents({ updateTerrain, moveItem, writeLog, queueStationMasterDoorAction });
@@ -101,7 +99,6 @@ function resetLoop(message, { effect = true } = {}) {
     bullet: null,
     arrested: false,
     fires: [],
-    fireSpreadCountdown: nextFireSpreadDelay(),
   };
   state.npcs = allMapNpcs().map(createNpcState);
   seedRoadTraffic();
@@ -334,7 +331,7 @@ function igniteFire() {
   }
 
   addFire(state.currentMapKey, target.x, target.y);
-  writeLog('You flick the lighter and start a hungry fire. Every few moves, one random neighboring tile may catch.');
+  writeLog('You flick the lighter and start a hungry fire. Every turn, one random neighboring tile may catch.');
   draw();
 }
 
@@ -347,10 +344,7 @@ function updateFires() {
   }
 
   if (!state.fires.length) return false;
-  state.fireSpreadCountdown -= 1;
-  if (state.fireSpreadCountdown > 0) return false;
 
-  state.fireSpreadCountdown = nextFireSpreadDelay();
   const nextFire = randomItem(uniqueFirePoints(state.fires.flatMap((fire) => (
     neighborsOf(fire)
       .filter((neighbor) => canBurn(fire.mapKey, neighbor.x, neighbor.y))
@@ -365,9 +359,6 @@ function updateFires() {
   return false;
 }
 
-function nextFireSpreadDelay() {
-  return randomInteger(FIRE_SPREAD_MIN_TURNS, FIRE_SPREAD_MAX_TURNS);
-}
 
 function updateFireTargets() {
   if (!state.fires.length) return;
