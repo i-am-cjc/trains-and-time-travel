@@ -482,31 +482,31 @@ function isCarBlockedByTrafficJam(car, jammedCarIds = new Set()) {
   const nextX = car.x + car.dx;
   if (tileAtFor(car.mapKey, nextX, car.y).trafficBlocked) return true;
 
-  const wreckAhead = state.wrecks.find((wreck) => (
+  const wreckImmediatelyAhead = state.wrecks.find((wreck) => (
     wreck.mapKey === car.mapKey
     && wreck.y === car.y
-    && (wreck.x === nextX || (car.dx > 0 ? wreck.x > car.x : wreck.x < car.x))
+    && wreck.x === nextX
   ));
-  if (wreckAhead) return true;
+  if (wreckImmediatelyAhead) return true;
 
   const roadBlockingEngine = state.fireEngines.find((engine) => (
     engine.mapKey === car.mapKey
     && engine.dx === car.dx
     && tileAtFor(engine.mapKey, engine.x, engine.y).road
     && engine.y === car.y
-    && (engine.x === nextX || (car.dx > 0 ? engine.x > car.x : engine.x < car.x))
+    && engine.x === nextX
   ));
   if (roadBlockingEngine) return true;
 
-  const recoveryWagonAhead = state.recoveryWagons.find((wagon) => (
+  const recoveryWagonImmediatelyAhead = state.recoveryWagons.find((wagon) => (
     wagon.mapKey === car.mapKey
     && tileAtFor(wagon.mapKey, wagon.x, wagon.y).road
     && wagon.y === car.y
-    && (wagon.x === nextX || (car.dx > 0 ? wagon.x > car.x : wagon.x < car.x))
+    && wagon.x === nextX
   ));
-  if (recoveryWagonAhead) return true;
+  if (recoveryWagonImmediatelyAhead) return true;
 
-  const queuedCarAhead = state.cars.find((other) => (
+  const queuedCarImmediatelyAhead = state.cars.find((other) => (
     other.id !== car.id
     && other.mapKey === car.mapKey
     && other.y === car.y
@@ -514,7 +514,7 @@ function isCarBlockedByTrafficJam(car, jammedCarIds = new Set()) {
     && other.x === nextX
     && jammedCarIds.has(other.id)
   ));
-  return Boolean(queuedCarAhead);
+  return Boolean(queuedCarImmediatelyAhead);
 }
 
 function trafficQueuedToSpawner(spawner) {
