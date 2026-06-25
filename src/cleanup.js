@@ -118,14 +118,14 @@ export function createCleanupLogic({
         removeCleanupCrewAtVan(van);
         if (!state.npcs.some((npc) => npc.homeCleanupVanId === van.id)) {
           van.status = 'returning';
+          removeCleanupSign(van);
           writeLog('The cleanup crew packs up the cleanup sign and the van returns to the road.');
         }
         return;
       }
 
-      const workPoint = cleanupWorkPoint(hazard, crew[0] ?? van);
-      crew.forEach((npc) => { npc.target = workPoint ?? { x: hazard.x, y: hazard.y }; });
-      placeCleanupSign(hazard);
+      assignCleanupTargets(hazard, crew);
+      placeCleanupSign(van, hazard);
       const adjacentCrew = crew.filter((npc) => npc.mapKey === hazard.mapKey && manhattanDistance(npc, hazard) <= 1);
       if (!adjacentCrew.length) return;
       hazard.cleaningTurns = (hazard.cleaningTurns ?? 0) + adjacentCrew.length;
@@ -150,21 +150,33 @@ export function createCleanupLogic({
       npc.profile.dialogue = cleanupDialogue(nextAsh);
       npc.profile.description = `A cleanup responder in a pale hazmat suit assigned to ${hazardLabel(nextAsh)}.`;
     });
-    writeLog('The cleanup crew moves the sign to the next ash tile instead of packing up.');
+    assignCleanupTargets(nextAsh, crew);
+    writeLog('The cleanup crew leaves the posted sign in place and fans out toward the next ash tile.');
   }
 
-  function placeCleanupSign(hazard) {
+  function assignCleanupTargets(hazard, crew) {
+    const workPoints = cleanupWorkPoints(hazard);
+    crew.forEach((npc, index) => {
+      npc.target = workPoints[index % workPoints.length] ?? { x: hazard.x, y: hazard.y };
+    });
+  }
+
+  function placeCleanupSign(van, hazard) {
     const state = getState();
-    if (state.cleanupSigns.some((sign) => sign.hazardId === hazard.id)) return;
+    if (state.cleanupSigns.some((sign) => sign.vanId === van.id)) return;
     const point = cleanupWorkPoint(hazard, hazard) ?? hazard;
-    state.cleanupSigns.push({ hazardId: hazard.id, mapKey: hazard.mapKey, ...point });
+    state.cleanupSigns.push({ vanId: van.id, hazardId: hazard.id, mapKey: hazard.mapKey, ...point });
+  }
+
+  function removeCleanupSign(van) {
+    const state = getState();
+    state.cleanupSigns = state.cleanupSigns.filter((sign) => sign.vanId !== van.id);
   }
 
 
   function cleanHazard(hazard) {
     const state = getState();
     hazard.status = 'cleaned';
-    state.cleanupSigns = state.cleanupSigns.filter((sign) => sign.hazardId !== hazard.id);
     state.ashPiles = state.ashPiles.filter((ash) => ash.id !== hazard.sourceId);
     state.bloodPatches = state.bloodPatches.filter((blood) => blood.id !== hazard.sourceId);
     if (hazard.type === 'corpse') {
@@ -245,13 +257,17 @@ export function createCleanupLogic({
   }
 
   function cleanupWorkPoint(hazard, cleaner) {
-    return closestPoint(cleaner, neighborsOf(hazard).filter((point) => !tileAtFor(hazard.mapKey, point.x, point.y).blocks)) ?? hazard;
+    return closestPoint(cleaner, cleanupWorkPoints(hazard)) ?? hazard;
+  }
+
+  function cleanupWorkPoints(hazard) {
+    return neighborsOf(hazard).filter((point) => !tileAtFor(hazard.mapKey, point.x, point.y).blocks);
   }
 
 
   function cleanupFinishedMessage(hazard) {
-    if (hazard.type === 'ash') return 'The hazmat crew posts one cleanup sign, sweeps one ash pile from the tile, then carries the sign away.';
-    return `The hazmat crew seals and scrubs ${hazardLabel(hazard)}, then carries the cleanup sign away.`;
+    if (hazard.type === 'ash') return 'The hazmat crew sweeps one ash pile from the tile while their first cleanup sign stays put.';
+    return `The hazmat crew seals and scrubs ${hazardLabel(hazard)} while their posted cleanup sign stays put.`;
   }
 
   function moveCleanupVanBackToRoad(van) {
@@ -275,7 +291,7 @@ function cleanupDialogue(hazard) {
   const repeated = hazard.playerIncidentCount > 1;
   const repeatLine = repeated ? 'The cleaner says, “Same coordinates, same traveler-shaped problem. We are adding this to your file.”' : null;
   const byType = {
-    ash: 'The cleaner says, “Ash gets everywhere. One sign, one tile, then we move to the next mess.”',
+    ash: 'The cleaner says, “Ash gets everywhere. One sign at the start, then each of us takes a tile.”',
     blood: 'The cleaner says, “Biohazard protocol. Do not step in the evidence, or what used to be evidence.”',
     corpse: 'The cleaner says, “Body is gone, but the tile remembers. We make it forget safely.”',
     'blocked-traffic': 'The cleaner says, “High-traffic obstruction. We post one sign, clear it, and move on.”',
