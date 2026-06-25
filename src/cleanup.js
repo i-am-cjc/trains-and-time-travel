@@ -131,7 +131,6 @@ export function createCleanupLogic({
       hazard.cleaningTurns = (hazard.cleaningTurns ?? 0) + adjacentCrew.length;
       if (hazard.cleaningTurns < CLEANING_TURNS_REQUIRED) return;
       cleanHazard(hazard);
-      writeLog(cleanupFinishedMessage(hazard));
       assignNextAshTile(van, hazard, crew);
     });
   }
@@ -151,7 +150,6 @@ export function createCleanupLogic({
       npc.profile.description = `A cleanup responder in a pale hazmat suit assigned to ${hazardLabel(nextAsh)}.`;
     });
     assignCleanupTargets(nextAsh, crew);
-    writeLog('The cleanup crew leaves the posted sign in place and fans out toward the next ash tile.');
   }
 
   function assignCleanupTargets(hazard, crew) {
@@ -182,7 +180,7 @@ export function createCleanupLogic({
     if (hazard.type === 'corpse') {
       const scene = state.crimeScenes.find((candidate) => candidate.corpseId === hazard.sourceId);
       if (scene) {
-        state.barriers = state.barriers.filter((barrier) => barrier.sceneId !== scene.id);
+        state.barriers = state.barriers.filter((barrier) => barrier.sceneId !== scene.id || barrier.trafficBlock);
         state.chalkOutlines = state.chalkOutlines.filter((outline) => outline.sceneId !== scene.id);
       }
     }
@@ -264,11 +262,6 @@ export function createCleanupLogic({
     return neighborsOf(hazard).filter((point) => !tileAtFor(hazard.mapKey, point.x, point.y).blocks);
   }
 
-
-  function cleanupFinishedMessage(hazard) {
-    if (hazard.type === 'ash') return 'The hazmat crew sweeps one ash pile from the tile while their first cleanup sign stays put.';
-    return `The hazmat crew seals and scrubs ${hazardLabel(hazard)} while their posted cleanup sign stays put.`;
-  }
 
   function moveCleanupVanBackToRoad(van) {
     if (tileAtFor(van.mapKey, van.x, van.y).road) return { ...van, status: 'leaving' };

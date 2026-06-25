@@ -6,6 +6,10 @@ export function isDetective(npc) {
   return npc.profile.role === 'detective';
 }
 
+export function isPoliceResponder(npc) {
+  return npc.profile.role === 'detective' || npc.profile.role === 'road traffic officer';
+}
+
 export function createDetectiveLogic({
   getState,
   getElapsedMinutes,
@@ -46,7 +50,9 @@ export function createDetectiveLogic({
     };
     state.nextPoliceCarId += 1;
     state.policeCars.push(car);
-    writeLog('A police car follows the ambulance call, carrying a detective to the scene.');
+    writeLog(scene.roadTrafficBlock
+      ? 'A police car answers the road fatality, carrying a traffic officer to close the lane.'
+      : 'A police car follows the ambulance call, carrying a detective to the scene.');
   }
 
   function movePoliceCars() {
@@ -73,19 +79,31 @@ export function createDetectiveLogic({
     if (!step) return car;
     const moved = { ...car, ...step, targetScene: { ...scene } };
     if (manhattanDistance(moved, scene) <= POLICE_CAR_RESPONSE_DISTANCE) {
-      deployDetective(moved);
-      writeLog('The police car stops nearby and a detective steps out, waiting for the ambulance to clear the body.');
+      deployPoliceResponder(moved);
+      writeLog(scene.roadTrafficBlock
+        ? 'The police car stops nearby and a road traffic officer sets out cones and barriers to hold the traffic.'
+        : 'The police car stops nearby and a detective steps out, waiting for the ambulance to clear the body.');
       return { ...moved, status: 'deployed' };
     }
     return moved;
   }
 
-  function deployDetective(car) {
+  function deployPoliceResponder(car) {
     const state = getState();
     const spawnPoints = uniquePoints([car, ...neighborsOf(car), ...neighborsOf({ x: car.x + 1, y: car.y })])
       .filter((point) => !tileAtFor(car.mapKey, point.x, point.y).blocks && !npcAtOnMap(car.mapKey, point.x, point.y));
     const point = spawnPoints[0] ?? car;
-    const profile = {
+    const scene = sceneById(car.sceneId);
+    const trafficOfficer = scene?.roadTrafficBlock;
+    const profile = trafficOfficer ? {
+      key: `traffic-officer-${car.id}`,
+      name: 'Road Traffic Officer Lane',
+      age: 41,
+      gender: 'female',
+      role: 'road traffic officer',
+      goal: 'block the road until the ambulance removes the person',
+      dialogue: ['The traffic officer says, “Road is closed. Cars can wait until the next loop.”'],
+    } : {
       key: `detective-${car.id}`,
       name: 'Detective Hal Ward',
       age: 46,
@@ -94,7 +112,7 @@ export function createDetectiveLogic({
       goal: 'secure the scene after the ambulance has collected the body',
       dialogue: ['The detective says, “Nobody crosses the line until I have marked the scene.”'],
     };
-    state.npcs.push({ x: point.x, y: point.y, mapKey: car.mapKey, mapSymbol: 'D', profile, route: [point, point], target: { ...car.targetScene }, homePoliceCarId: car.id, assignedSceneId: car.sceneId, pendingDoorActions: [] });
+    state.npcs.push({ x: point.x, y: point.y, mapKey: car.mapKey, mapSymbol: trafficOfficer ? 'Z' : 'D', profile, route: [point, point], target: { ...car.targetScene }, homePoliceCarId: car.id, assignedSceneId: car.sceneId, pendingDoorActions: [] });
   }
 
   function updateDetectiveSceneWork() {
@@ -108,6 +126,10 @@ export function createDetectiveLogic({
         if (scene.status === 'secured') car.status = 'returning';
         return;
       }
+      if (scene.roadTrafficBlock) {
+        maintainRoadClosure(scene, detective, car);
+        return;
+      }
       if (scene.status !== 'bodyCollected') {
         detective.target = { x: scene.x, y: scene.y };
         return;
@@ -119,6 +141,24 @@ export function createDetectiveLogic({
         finishScene(scene, detective, car);
       }
     });
+  }
+
+  function maintainRoadClosure(scene, officer, car) {
+    const state = getState();
+    if (!state.barriers.some((barrier) => barrier.sceneId === scene.id && barrier.trafficBlock)) {
+      state.barriers.push(...trafficBarrierPoints(scene));
+    }
+    if (scene.status !== 'bodyCollected') {
+      officer.target = trafficOfficerWorkPoint(scene, officer) ?? { x: scene.x, y: scene.y };
+      return;
+    }
+    scene.status = 'secured';
+    officer.target = { x: car.x, y: car.y };
+    removeDetectivesAtPoliceCar(car);
+    if (!state.npcs.some((npc) => npc.homePoliceCarId === car.id)) {
+      car.status = 'returning';
+      writeLog('The road traffic officer leaves the barriers in place and returns to the police car.');
+    }
   }
 
   function finishScene(scene, detective, car) {
@@ -149,7 +189,7 @@ export function createDetectiveLogic({
 
   function returningPoliceCarFor(npc) {
     const state = getState();
-    if (!isDetective(npc)) return null;
+    if (!isPoliceResponder(npc)) return null;
     const scene = sceneById(npc.assignedSceneId);
     if (scene?.status !== 'secured') return null;
     return state.policeCars.find((car) => car.id === npc.homePoliceCarId && car.status === 'deployed') ?? null;
@@ -159,6 +199,10 @@ export function createDetectiveLogic({
     const state = getState();
     const car = state.policeCars.find((candidate) => candidate.id === npc.homePoliceCarId);
     const scene = sceneById(npc.assignedSceneId);
+    if (scene?.roadTrafficBlock && scene.status !== 'bodyCollected') {
+      const workPoint = trafficOfficerWorkPoint(scene, npc);
+      if (workPoint) return nextStepToward({ ...npc, target: workPoint }, occupied, { avoidFire: false }) ?? null;
+    }
     if (scene?.status === 'bodyCollected') {
       const workPoint = detectiveWorkPoint(scene, npc, occupied);
       if (workPoint) return nextStepToward({ ...npc, target: workPoint }, occupied, { avoidFire: false }) ?? null;
@@ -176,6 +220,17 @@ export function createDetectiveLogic({
 
   function barrierPointsAround(scene) {
     return pointsAround(scene, 1).map((point) => ({ sceneId: scene.id, mapKey: scene.mapKey, x: point.x, y: point.y }));
+  }
+
+  function trafficBarrierPoints(scene) {
+    const roadPoints = [scene, ...neighborsOf(scene)]
+      .filter((point) => tileAtFor(scene.mapKey, point.x, point.y).road);
+    const points = roadPoints.length ? roadPoints : [scene];
+    return points.map((point) => ({ sceneId: scene.id, mapKey: scene.mapKey, x: point.x, y: point.y, trafficBlock: true }));
+  }
+
+  function trafficOfficerWorkPoint(scene, officer) {
+    return closestPoint(officer, neighborsOf(scene).filter((point) => !tileAtFor(scene.mapKey, point.x, point.y).blocks)) ?? scene;
   }
 
   function detectiveWorkPoint(scene, detective, occupied = new Set()) {
@@ -221,8 +276,9 @@ export function createDetectiveLogic({
     const state = getState();
     return state.crimeScenes.find((scene) => {
       if (scene.status === 'secured') return false;
-      return scene.detectiveDispatchMinute !== null
-        && getElapsedMinutes() >= scene.detectiveDispatchMinute
+      const readyToDispatch = scene.roadTrafficBlock
+        || (scene.detectiveDispatchMinute !== null && getElapsedMinutes() >= scene.detectiveDispatchMinute);
+      return readyToDispatch
         && !state.policeCars.some((car) => car.sceneId === scene.id && car.status !== 'leaving');
     }) ?? null;
   }
