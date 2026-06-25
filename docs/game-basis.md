@@ -23,7 +23,7 @@ The game canvas is mounted by `index.html`, with the engine in `src/main.js`.
 
 ## Time loop
 
-Each loop starts at 120 minutes. Every successful move or interaction spends one minute. At zero minutes, the player, townspeople, remembered tiles, and the world state reset to the map's initial state.
+Each loop starts at 600 minutes. Every successful move or interaction spends one minute. At zero minutes, the player, townspeople, remembered tiles, and the world state reset to the map's initial state.
 
 ## Map editing
 

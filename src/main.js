@@ -99,6 +99,7 @@ function resetLoop(message, { effect = true } = {}) {
     bullet: null,
     arrested: false,
     fires: [],
+    ashPiles: [],
   };
   state.npcs = allMapNpcs().map(createNpcState);
   seedRoadTraffic();
@@ -381,6 +382,9 @@ function extinguishAdjacentFires() {
     extinguished.add(`${fire.mapKey}:${positionKey(fire.x, fire.y)}`);
   });
   if (!extinguished.size) return;
+  state.fires.forEach((fire) => {
+    if (extinguished.has(`${fire.mapKey}:${positionKey(fire.x, fire.y)}`)) addAshPile(fire.mapKey, fire.x, fire.y);
+  });
   state.fires = state.fires.filter((fire) => !extinguished.has(`${fire.mapKey}:${positionKey(fire.x, fire.y)}`));
   writeLog('A police officer empties a fire extinguisher and beats back part of the blaze.');
 }
@@ -404,6 +408,11 @@ function canBurn(mapKey, x, y) {
 
 function isFireAt(mapKey, x, y) {
   return state.fires.some((fire) => fire.mapKey === mapKey && fire.x === x && fire.y === y);
+}
+
+function addAshPile(mapKey, x, y) {
+  if (state.ashPiles.some((ashPile) => ashPile.mapKey === mapKey && ashPile.x === x && ashPile.y === y)) return;
+  state.ashPiles.push({ mapKey, x, y });
 }
 
 function closestFireTo(point) {
@@ -931,6 +940,9 @@ function draw() {
     .forEach((item) => {
       if (visible.has(`${item.x},${item.y}`)) drawItem(item, true);
     });
+  state.ashPiles.filter((ashPile) => ashPile.mapKey === state.currentMapKey).forEach((ashPile) => {
+    if (visible.has(`${ashPile.x},${ashPile.y}`)) drawSprite(ashPile.x, ashPile.y, 'ashPile', true);
+  });
   state.fires.filter((fire) => fire.mapKey === state.currentMapKey).forEach((fire) => {
     if (visible.has(`${fire.x},${fire.y}`)) drawSprite(fire.x, fire.y, 'fire', true);
   });
@@ -1183,6 +1195,12 @@ function drawSprite(x, y, sprite, visible, desaturated = false, alpha = 1) {
       g.circle(px + 19, py + 13, 6).fill(tone(0xfacc15));
       g.moveTo(px + 16, py + 5).lineTo(px + 24, py + 21).lineTo(px + 8, py + 21).fill(tone(0xffedd5));
       break;
+    case 'ashPile':
+      g.ellipse(px + 16, py + 22, 11, 5).fill(tone(0x57534e));
+      g.ellipse(px + 11, py + 20, 5, 3).fill(tone(0x78716c));
+      g.ellipse(px + 20, py + 19, 6, 4).fill(tone(0x44403c));
+      g.circle(px + 15, py + 18, 2).fill(tone(0xa8a29e));
+      break;
     case 'bullet':
       g.circle(px + 16, py + 16, 4).fill(tone(0xf8fafc));
       g.circle(px + 16, py + 16, 2).fill(tone(0xfacc15));
@@ -1295,6 +1313,7 @@ function baseColorFor(sprite) {
   if (sprite === 'player' || sprite === 'playerGun') return 0x264757;
   if (sprite === 'bullet') return 0x000000;
   if (sprite === 'fire') return 0x451a03;
+  if (sprite === 'ashPile') return 0x292524;
   if (sprite === 'blood') return 0x000000;
   if (sprite === 'trainDoor') return 0x102338;
   if (sprite === 'carLeft' || sprite === 'carRight') return 0x1f2933;
