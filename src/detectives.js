@@ -3,6 +3,7 @@ const POLICE_CAR_SPAWN_X = 72;
 const POLICE_CAR_ROAD_Y = 31;
 export const DETECTIVE_RESPONSE_DELAY_MINUTES = 5;
 const ROAD_TRAFFIC_SCENE_CLEAR_DELAY_MINUTES = 20;
+const BLOCKED_REDISPATCH_DELAY_MINUTES = 20;
 
 export function isDetective(npc) {
   return npc.profile.role === 'detective';
@@ -33,6 +34,7 @@ export function createDetectiveLogic({
     const crimeScene = nextCrimeSceneNeedingDetective();
     if (!crimeScene) return;
     const state = getState();
+    if (state.minutesElapsed < state.nextPoliceCarDispatchMinute) return;
     if (state.policeCars.some((car) => car.sceneId === crimeScene.id && car.status !== 'leaving')) return;
     dispatchPoliceCar(crimeScene);
   }
@@ -53,6 +55,7 @@ export function createDetectiveLogic({
     };
     state.nextPoliceCarId += 1;
     state.policeCars.push(car);
+    state.nextPoliceCarDispatchMinute = state.minutesElapsed;
     writeLog(scene.roadTrafficBlock
       ? 'A police car answers the road fatality, carrying a traffic officer to close the lane.'
       : 'A police car follows the ambulance call, carrying a detective to the scene.');
@@ -216,16 +219,34 @@ export function createDetectiveLogic({
     const scene = sceneById(npc.assignedSceneId);
     if (scene?.roadTrafficBlock && scene.status !== 'secured') {
       const workPoint = trafficOfficerWorkPoint(scene, npc);
-      if (workPoint) return nextStepToward({ ...npc, target: workPoint }, occupied, { avoidFire: false }) ?? null;
+      if (workPoint) return stepOrMarkBlocked(npc, workPoint, occupied);
     }
     if (scene?.status === 'bodyCollected') {
       const workPoint = detectiveWorkPoint(scene, npc, occupied);
-      if (workPoint) return nextStepToward({ ...npc, target: workPoint }, occupied, { avoidFire: false }) ?? null;
+      if (workPoint) return stepOrMarkBlocked(npc, workPoint, occupied);
     }
     if (scene?.status === 'secured' && car) {
       return nextStepToward({ ...npc, target: { x: car.x, y: car.y } }, occupied, { avoidFire: false }) ?? null;
     }
-    return nextStepToward(npc, occupied, { avoidFire: false }) ?? null;
+    return stepOrMarkBlocked(npc, npc.target, occupied);
+  }
+
+  function stepOrMarkBlocked(npc, target, occupied) {
+    const step = nextStepToward({ ...npc, target }, occupied, { avoidFire: false }) ?? null;
+    if (!step && (npc.x !== target.x || npc.y !== target.y)) markPoliceResponderBlocked(npc);
+    return step;
+  }
+
+  function markPoliceResponderBlocked(npc) {
+    const state = getState();
+    const car = state.policeCars.find((candidate) => candidate.id === npc.homePoliceCarId);
+    if (!car || car.status !== 'deployed' || car.blockedReturn) return;
+    car.blockedReturn = true;
+    car.status = 'returning';
+    state.nextPoliceCarDispatchMinute = getElapsedMinutes() + BLOCKED_REDISPATCH_DELAY_MINUTES;
+    state.barriers = state.barriers.filter((barrier) => barrier.sceneId !== npc.assignedSceneId);
+    state.npcs = state.npcs.filter((candidate) => candidate.homePoliceCarId !== car.id);
+    writeLog('The police responder cannot reach the scene, so they return to the car and leave. Another crew can be dispatched in twenty minutes.');
   }
 
   function policeCarAt(x, y) {
