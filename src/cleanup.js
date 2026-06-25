@@ -211,9 +211,26 @@ export function createCleanupLogic({
   }
 
   function nextCleanupStep(npc, occupied) {
-    const step = nextStepToward(npc, occupied, { avoidFire: false }) ?? null;
-    if (!step && (npc.x !== npc.target.x || npc.y !== npc.target.y)) markCleanupCrewBlocked(npc);
+    if (npc.fallbackDespawnAt) return nextStepToward(npc, occupied, { avoidFire: false, avoidRoad: true });
+
+    const returningVan = returningCleanupVanFor(npc);
+    const target = returningVan ? { x: returningVan.x, y: returningVan.y } : npc.target;
+    const step = nextStepToward({ ...npc, target }, occupied, { avoidFire: false, avoidRoad: true }) ?? null;
+    if (!step && (npc.x !== target.x || npc.y !== target.y)) {
+      if (returningVan) return sendCleanupResponderToFireStation(npc, occupied);
+      markCleanupCrewBlocked(npc);
+    }
     return step;
+  }
+
+  function sendCleanupResponderToFireStation(npc, occupied) {
+    const fallback = closestFireStationDespawnPoint(npc);
+    if (!fallback) return null;
+    npc.target = fallback;
+    npc.fallbackDespawnAt = fallback;
+    npc.profile.goal = 'walk back to the fire station without stepping into the road';
+    writeLog(`${npc.profile.name} cannot safely get back to the cleanup van, so they walk back to the fire station instead.`);
+    return nextStepToward(npc, occupied, { avoidFire: false, avoidRoad: true });
   }
 
   function markCleanupCrewBlocked(npc) {
@@ -296,6 +313,14 @@ export function createCleanupLogic({
 
   function closestRoadPoint(point) {
     return closestPoint(point, maps[point.mapKey].walkable.filter((tile) => tileAtFor(point.mapKey, tile.x, tile.y).road));
+  }
+
+  function closestFireStationDespawnPoint(point) {
+    const candidates = maps[point.mapKey].walkable.filter((tile) => (
+      !tileAtFor(point.mapKey, tile.x, tile.y).road
+      && neighborsOf(tile).some((neighbor) => tileAtFor(point.mapKey, neighbor.x, neighbor.y).description === 'Fire station equipment bay.')
+    ));
+    return closestPoint(point, candidates);
   }
 
   return { updateCleanupResponse, moveCleanupVans, updateCleanupWork, returningCleanupVanFor, cleanupVanAt, nextCleanupStep };

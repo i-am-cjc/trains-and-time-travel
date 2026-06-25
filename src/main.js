@@ -930,6 +930,10 @@ function moveNpcs() {
     occupied.delete(`${traveler.mapKey}:${positionKey(traveler.x, traveler.y)}`);
     occupied.add(stepKey);
     const moved = { ...traveler, x: step.x, y: step.y, chaseAxis: step.chaseAxis ?? traveler.chaseAxis };
+    if (moved.fallbackDespawnAt && moved.x === moved.fallbackDespawnAt.x && moved.y === moved.fallbackDespawnAt.y) {
+      occupied.delete(stepKey);
+      return null;
+    }
     const returningVehicle = returningFireEngineFor(moved) ?? returningAmbulanceFor(moved) ?? returningPoliceCarFor(moved) ?? returningCleanupVanFor(moved);
     if (returningVehicle && moved.x === returningVehicle.x && moved.y === returningVehicle.y) {
       occupied.delete(stepKey);
@@ -1148,9 +1152,7 @@ function nextNpcStep(npc, occupied) {
   if (isParamedic(npc)) return nextParamedicStep(npc, occupied) ?? nextStepToward(npc, occupied);
   if (isPoliceResponder(npc)) return nextDetectiveStep(npc, occupied) ?? nextStepToward(npc, occupied);
   if (isCleanupResponder(npc)) return nextCleanupStep(npc, occupied) ?? nextStepToward(npc, occupied);
-  if (isFirefighter(npc) && state.fires.some((fire) => fire.mapKey === npc.mapKey)) {
-    return nextFirefighterStep(npc, occupied) ?? nextStepToward(npc, occupied);
-  }
+  if (isFirefighter(npc)) return nextFirefighterStep(npc, occupied) ?? nextStepToward(npc, occupied);
   if (isLawEnforcement(npc) && state.gunfirePanic && npc.mapKey === state.currentMapKey) {
     return nextPoliceChaseStep(npc, occupied) ?? nextStepToward(npc, occupied);
   }
