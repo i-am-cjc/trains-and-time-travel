@@ -18,12 +18,12 @@ The game canvas is mounted by `index.html`, with the engine in `src/main.js`.
 - Moving into an open square spends one minute.
 - Bumping into a townsperson interacts with them and spends one minute.
 - Press Space or E to interact with the square you are facing; successful interactions spend one minute.
-- Returning to the train ends the current loop immediately.
+- The run continues indefinitely until the player dies or uses the stopwatch to reset manually.
 - Click **Inspect a square**, then click a known square to read a description.
 
-## Time loop
+## Runs and manual reset
 
-Each loop starts at 600 minutes. Every successful move or interaction spends one minute. At zero minutes, the player, townspeople, remembered tiles, and the world state reset to the map's initial state.
+Each run keeps counting upward as successful moves and interactions spend one minute. There is no automatic time limit; the stopwatch item manually resets the player, townspeople, remembered tiles, and world state to the map's initial state.
 
 ## Map editing
 
@@ -37,7 +37,7 @@ Legend:
 | `.` | Floor or path |
 | `-` | Platform edge tile that runs beside the track |
 | `=` | Train line; blocks the top of the map |
-| `T` | Train tile; stepping on it ends the loop |
+| `T` | Train tile; crossing it keeps the current run going |
 | `P` | Player start |
 | `C` | Parked car |
 | `S` | Shop |
@@ -61,4 +61,4 @@ The station master starts near the train, walks to unlock the side-room door at 
 
 ## Rendering rules
 
-The renderer uses a simple line-of-sight check from the player. Unseen squares are black. Squares seen earlier in the current loop but currently outside line of sight are rendered with their saturation reduced to 10% and faded to 67% opacity.
+The renderer uses a simple line-of-sight check from the player. Unseen squares are black. Squares seen earlier in the current run but currently outside line of sight are rendered with their saturation reduced to 10% and faded to 67% opacity.

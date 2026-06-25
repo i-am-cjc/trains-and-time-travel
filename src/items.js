@@ -1,6 +1,4 @@
-import { POCKET_WATCH_BONUS_MINUTES } from './constants.js';
-
-export function createItemDefinitions({ addLoopMinutes, fireGun, igniteFire, writeLog, draw }) {
+export function createItemDefinitions({ resetRun, fireGun, igniteFire, writeLog, draw }) {
   return {
     carSpawnerLeft: {
       name: 'Left-moving car spawner',
@@ -32,13 +30,13 @@ export function createItemDefinitions({ addLoopMinutes, fireGun, igniteFire, wri
         igniteFire();
       },
     },
-    pocketWatch: {
-      name: 'Pocket watch',
-      description: 'A brass watch wound against the loop. Use it to add 30 minutes to this loop.',
+    stopwatch: {
+      name: 'Stopwatch',
+      description: 'A brass stopwatch keyed to the station. Use it to manually reset the current run.',
       color: 0xf6c453,
+      reusable: true,
       effect: ({ item }) => {
-        addLoopMinutes(POCKET_WATCH_BONUS_MINUTES);
-        writeLog(`${item.name} clicks open. The loop stretches by ${POCKET_WATCH_BONUS_MINUTES} minutes.`);
+        resetRun(`${item.name} snaps shut. The station resets and a new run begins.`);
         draw();
       },
     },
@@ -46,7 +44,7 @@ export function createItemDefinitions({ addLoopMinutes, fireGun, igniteFire, wri
 }
 
 export const placedItems = [
-  { id: 'pocket-watch', type: 'pocketWatch', mapKey: 'station', x: 55, y: 27 },
+  { id: 'stopwatch', type: 'stopwatch', mapKey: 'station', x: 55, y: 27 },
   { id: 'test-lighter', type: 'lighter', mapKey: 'station', x: 71, y: 12 },
   { id: 'hidden-gun', type: 'gun', mapKey: 'underground', x: 8, y: 5 },
   { id: 'car-spawner-right', type: 'carSpawnerRight', mapKey: 'station', x: 0, y: 30, dx: 1 },

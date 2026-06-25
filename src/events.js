@@ -17,7 +17,7 @@ export function createScheduledEvents({ updateTerrain, moveItem, writeLog, queue
           interact: 'The kiosk bell gives one bright ring, then the clock hand jumps backward.',
           description: 'A kiosk with a freshly ringing bell and a suspiciously confident clock.',
         });
-        moveItem('pocket-watch', { x: 90, y: 15 });
+        moveItem('stopwatch', { x: 90, y: 15 });
         writeLog('A kiosk bell rings somewhere down the concourse. Something small skitters across the paving.');
       },
     },
@@ -49,17 +49,6 @@ export function createScheduledEvents({ updateTerrain, moveItem, writeLog, queue
       effect: () => {
         queueStationMasterDoorAction('close');
         writeLog('The station master turns back toward the side-room door with the brass key ready.');
-      },
-    },
-    {
-      id: 'train-final-warning',
-      triggerMinute: ({ loopLimit }) => loopLimit - 10,
-      oncePerLoop: true,
-      effect: () => {
-        updateTerrain('T', {
-          description: 'The waiting train shudders with final-loop static. Boarding now will end this loop.',
-        });
-        writeLog('The train horn blares twice. Ten minutes remain before the loop collapses.');
       },
     },
   ];
