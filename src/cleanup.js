@@ -21,6 +21,7 @@ export function createCleanupLogic({
   neighborsOf,
   closestPoint,
   positionKey,
+  carAtOnMap,
 }) {
   function updateCleanupResponse() {
     const hazard = nextWaitingHazard();
@@ -85,7 +86,7 @@ export function createCleanupLogic({
   function deployCleanupCrew(van) {
     const state = getState();
     const spawnPoints = uniquePoints([van, ...neighborsOf(van), ...neighborsOf({ x: van.x + 1, y: van.y })])
-      .filter((point) => !tileAtFor(van.mapKey, point.x, point.y).blocks && !npcAtOnMap(van.mapKey, point.x, point.y));
+      .filter((point) => !tileAtFor(van.mapKey, point.x, point.y).blocks && !npcAtOnMap(van.mapKey, point.x, point.y) && !carAtOnMap(van.mapKey, point.x, point.y));
     for (let index = 0; index < CLEANUP_CREW_SIZE; index += 1) {
       const point = spawnPoints[index % spawnPoints.length] ?? van;
       state.npcs.push(createCleanupResponderState(van, point, index));

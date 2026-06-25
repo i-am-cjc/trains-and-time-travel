@@ -25,6 +25,7 @@ export function createFirefighterLogic({
   uniquePoints,
   neighborsOf,
   closestPoint,
+  carAtOnMap,
 }) {
   function updateFireResponse() {
     const state = getState();
@@ -93,7 +94,7 @@ export function createFirefighterLogic({
   function deployFirefighters(engine) {
     const state = getState();
     const spawnPoints = uniquePoints([engine, ...neighborsOf(engine), ...neighborsOf({ x: engine.x + 1, y: engine.y })])
-      .filter((point) => !tileAtFor(engine.mapKey, point.x, point.y).blocks && !npcAtOnMap(engine.mapKey, point.x, point.y));
+      .filter((point) => !tileAtFor(engine.mapKey, point.x, point.y).blocks && !npcAtOnMap(engine.mapKey, point.x, point.y) && !carAtOnMap(engine.mapKey, point.x, point.y));
     for (let index = 0; index < FIRE_ENGINE_CREW_SIZE; index += 1) {
       const point = spawnPoints[index % spawnPoints.length] ?? engine;
       state.npcs.push(createFirefighterState(engine, point, index));

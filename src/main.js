@@ -76,6 +76,7 @@ const maps = Object.fromEntries(await Promise.all(
   uniquePoints,
   neighborsOf,
   closestPoint,
+  carAtOnMap,
 }));
 
 ({ updateAmbulanceResponse, moveAmbulances, updateParamedicCollection, returningAmbulanceFor, ambulanceAt, nextParamedicStep } = createAmbulanceLogic({
@@ -92,6 +93,7 @@ const maps = Object.fromEntries(await Promise.all(
   neighborsOf,
   closestPoint,
   positionKey,
+  carAtOnMap,
   onCorpseCollected: markCorpseCollected,
   onAmbulanceDispatched: scheduleDetectiveResponse,
 }));
@@ -110,6 +112,7 @@ const maps = Object.fromEntries(await Promise.all(
   neighborsOf,
   closestPoint,
   positionKey,
+  carAtOnMap,
 }));
 
 ({ updateCleanupResponse, moveCleanupVans, updateCleanupWork, returningCleanupVanFor, cleanupVanAt, nextCleanupStep } = createCleanupLogic({
@@ -126,6 +129,7 @@ const maps = Object.fromEntries(await Promise.all(
   neighborsOf,
   closestPoint,
   positionKey,
+  carAtOnMap,
 }));
 let map = maps.station;
 resetLoop('The doors hiss open. You step onto the platform. Survive as long as you can, then use the stopwatch when you want to reset.', { effect: false });
@@ -407,9 +411,9 @@ function moveCars() {
     .map((car) => {
       if (isCarBlockedByTrafficJam(car, jammed)) {
         jammed.add(car.id);
-        return car;
+        return { ...car, stationary: true };
       }
-      return { ...car, x: car.x + car.dx };
+      return { ...car, x: car.x + car.dx, stationary: false };
     })
     .filter((car) => car.x >= 0 && car.x < maps[car.mapKey].width);
 
@@ -423,7 +427,10 @@ function moveCars() {
 }
 
 function killNpcsHitByCars() {
-  const victims = state.npcs.filter((npc) => carAtOnMap(npc.mapKey, npc.x, npc.y));
+  const victims = state.npcs.filter((npc) => {
+    const car = carAtOnMap(npc.mapKey, npc.x, npc.y);
+    return car && !car.stationary;
+  });
   if (!victims.length) return;
 
   const victimKeys = new Set(victims.map((npc) => `${npc.mapKey}:${positionKey(npc.x, npc.y)}`));
@@ -806,7 +813,10 @@ function trackHazardPoint(type, source) {
 function moveNpcs() {
   updateGunfirePanicTargets();
   updateStationMasterScoldingTarget();
-  const occupied = new Set(state.npcs.map((npc) => `${npc.mapKey}:${positionKey(npc.x, npc.y)}`));
+  const occupied = new Set([
+    ...state.npcs.map((npc) => `${npc.mapKey}:${positionKey(npc.x, npc.y)}`),
+    ...carBlockedPositionsForNpcs(),
+  ]);
   const remarks = [];
 
   state.npcs = state.npcs.map((npc) => {
@@ -1125,6 +1135,10 @@ function vehicleBlockedPositions(vehicle) {
   return new Set(state.cars
     .filter((car) => car.mapKey === vehicle.mapKey)
     .map((car) => `${car.mapKey}:${positionKey(car.x, car.y)}`));
+}
+
+function carBlockedPositionsForNpcs() {
+  return state.cars.map((car) => `${car.mapKey}:${positionKey(car.x, car.y)}`);
 }
 
 function neighborsOf(point) {

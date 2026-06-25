@@ -21,6 +21,7 @@ export function createAmbulanceLogic({
   neighborsOf,
   closestPoint,
   positionKey,
+  carAtOnMap,
   onCorpseCollected,
   onAmbulanceDispatched,
 }) {
@@ -86,7 +87,7 @@ export function createAmbulanceLogic({
   function deployParamedics(ambulance) {
     const state = getState();
     const spawnPoints = uniquePoints([ambulance, ...neighborsOf(ambulance), ...neighborsOf({ x: ambulance.x + 1, y: ambulance.y })])
-      .filter((point) => !tileAtFor(ambulance.mapKey, point.x, point.y).blocks && !npcAtOnMap(ambulance.mapKey, point.x, point.y));
+      .filter((point) => !tileAtFor(ambulance.mapKey, point.x, point.y).blocks && !npcAtOnMap(ambulance.mapKey, point.x, point.y) && !carAtOnMap(ambulance.mapKey, point.x, point.y));
     for (let index = 0; index < AMBULANCE_CREW_SIZE; index += 1) {
       const point = spawnPoints[index % spawnPoints.length] ?? ambulance;
       state.npcs.push(createParamedicState(ambulance, point, index));
