@@ -1,5 +1,6 @@
 const AMBULANCE_CREW_SIZE = 2;
 const AMBULANCE_RESPONSE_DISTANCE = 3;
+const AMBULANCE_SPAWN_X = 72;
 const AMBULANCE_ROAD_Y = 30;
 
 export function isParamedic(npc) {
@@ -37,7 +38,7 @@ export function createAmbulanceLogic({
     const ambulance = {
       id: `ambulance-${state.nextAmbulanceId}`,
       mapKey: corpse.mapKey,
-      x: 0,
+      x: AMBULANCE_SPAWN_X,
       y: AMBULANCE_ROAD_Y,
       dx: 1,
       sprite: 'ambulance',
