@@ -1,5 +1,6 @@
 const FIRE_ENGINE_CREW_SIZE = 6;
 const FIRE_ENGINE_RESPONSE_DISTANCE = 5;
+const FIRE_ENGINE_SPAWN_X = 72;
 const FIRE_ENGINE_ROAD_Y = 30;
 
 export function isFirefighter(npc) {
@@ -44,7 +45,7 @@ export function createFirefighterLogic({
     const engine = {
       id: `fire-engine-${state.nextFireEngineId}`,
       mapKey: targetFire.mapKey,
-      x: 0,
+      x: FIRE_ENGINE_SPAWN_X,
       y: FIRE_ENGINE_ROAD_Y,
       dx: 1,
       sprite: 'fireEngine',
@@ -55,7 +56,7 @@ export function createFirefighterLogic({
     state.fireEngines.push(engine);
     state.fireEngineDispatchedThisTurn = true;
     state.lastFireResponseSize = state.fires.length;
-    writeLog('A fire engine siren rises from the left side of the road and races toward the blaze.');
+    writeLog('A fire engine siren rises from the station road and races toward the blaze.');
   }
 
   function moveFireEngines() {

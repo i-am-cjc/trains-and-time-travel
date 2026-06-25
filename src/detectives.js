@@ -1,4 +1,5 @@
 const POLICE_CAR_RESPONSE_DISTANCE = 3;
+const POLICE_CAR_SPAWN_X = 72;
 const POLICE_CAR_ROAD_Y = 31;
 export const DETECTIVE_RESPONSE_DELAY_MINUTES = 5;
 
@@ -40,7 +41,7 @@ export function createDetectiveLogic({
     const car = {
       id: `police-car-${state.nextPoliceCarId}`,
       mapKey: scene.mapKey,
-      x: 0,
+      x: POLICE_CAR_SPAWN_X,
       y: POLICE_CAR_ROAD_Y,
       dx: 1,
       sprite: 'policeCar',
