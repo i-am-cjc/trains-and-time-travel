@@ -99,7 +99,7 @@ function resetLoop(message, { effect = true } = {}) {
     bullet: null,
     arrested: false,
   };
-  state.npcs = maps.station.npcs.map(createNpcState);
+  state.npcs = allMapNpcs().map(createNpcState);
   seedRoadTraffic();
   if (effect) playResetEffect();
   draw();
@@ -127,7 +127,9 @@ async function loadMap(url, mapKey) {
       if (npcSymbol.uniquePerMap && npcs.some((npc) => npc.mapSymbol === cell)) {
         throw new Error(`${mapKey} contains more than one unique ${cell} NPC.`);
       }
-      npcs.push({ x, y, mapKey, mapSymbol: cell, profileKey: npcSymbol.profileKey });
+      const symbolIndex = npcs.filter((npc) => npc.mapSymbol === cell).length;
+      const profileKey = cell === 'Z' ? `police-${symbolIndex}` : npcSymbol.profileKey;
+      npcs.push({ x, y, mapKey, mapSymbol: cell, profileKey });
       grid[y][x] = '.';
     }
   }));
@@ -326,9 +328,7 @@ function arrestPlayer() {
   state.shootingMode = false;
   state.bullet = null;
   state.npcs = state.npcs
-    .filter((npc) => npc.mapKey !== 'policeStation')
-    .map((npc) => ({ ...npc, arrestingPlayer: false }))
-    .concat(map.npcs.map(createNpcState));
+    .map((npc) => ({ ...npc, arrestingPlayer: false }));
   closeReadableOverlay();
   renderInventory();
   draw();
@@ -480,7 +480,7 @@ function moveNpcs() {
     if (!step) return traveler;
 
     if (traveler.mapKey === state.currentMapKey && step.x === state.player.x && step.y === state.player.y) {
-      if (traveler.profile.key === 'police' && state.gunfirePanic) {
+      if (isLawEnforcement(traveler) && state.gunfirePanic) {
         return { ...traveler, arrestingPlayer: true };
       }
       if (traveler.profile.key === 'stationMaster' && traveler.scoldingPlayer) {
@@ -533,12 +533,16 @@ function alertStationMasterToTrackTrespass() {
 function updateGunfirePanicTargets() {
   if (!state.gunfirePanic) return;
   state.npcs.forEach((npc) => {
-    if (npc.profile.key === 'police') {
+    if (isLawEnforcement(npc)) {
       if (state.currentMapKey === npc.mapKey) npc.target = { ...state.player };
       return;
     }
     npc.target = farthestWalkablePointFromPlayer(npc.mapKey) ?? npc.target;
   });
+}
+
+function isLawEnforcement(npc) {
+  return npc.profile.role?.includes('police');
 }
 
 function farthestWalkablePointFromPlayer(mapKey) {
@@ -587,6 +591,10 @@ function performStationMasterDoorActions(npc) {
   npc.target = { x: 54, y: 8 };
 }
 
+function allMapNpcs() {
+  return Object.values(maps).flatMap((loadedMap) => loadedMap.npcs);
+}
+
 function createNpcState(npc, index) {
   const profile = npcDefinitions.find((definition) => definition.key === npc.profileKey) ?? genericNpcDefinitions()[index % genericNpcDefinitions().length];
   const route = createNpcRoute(npc, profile);
@@ -594,8 +602,11 @@ function createNpcState(npc, index) {
 }
 
 function genericNpcDefinitions() {
-  const directlyMappedProfiles = new Set(Object.values(npcMapSymbols).map((symbol) => symbol.profileKey).filter(Boolean));
-  return npcDefinitions.filter((definition) => !directlyMappedProfiles.has(definition.key));
+  return npcDefinitions.filter((definition) => (
+    definition.key !== 'stationMaster'
+    && definition.key !== 'policeGuard'
+    && !definition.role?.includes('police')
+  ));
 }
 
 function createNpcRoute(npc, profile) {
@@ -634,7 +645,8 @@ function createNpcRoute(npc, profile) {
 
 
 function npcDialogue(npc) {
-  return randomItem(npc.profile.dialogue) ?? terrain.N.interact;
+  const line = randomItem(npc.profile.dialogue) ?? terrain.N.interact;
+  return `${line} (${npc.profile.age}, ${npc.profile.gender}; goal: ${npc.profile.goal})`;
 }
 
 function npcBlockedRemark(npc) {
@@ -1177,17 +1189,26 @@ function animateBullet(shot) {
   step();
 }
 
+function gunfireReactionSummary(excludedNpc = null) {
+  const witnesses = state.npcs
+    .filter((npc) => npc !== excludedNpc && npc.mapKey === state.currentMapKey)
+    .slice(0, 4);
+  const reactions = witnesses.map((npc) => `${npc.profile.name} ${npc.profile.gunfireReaction}`);
+  if (!reactions.some((reaction) => reaction.includes('chase'))) reactions.push('Police give chase while civilians run for cover');
+  return reactions.join('; ') + '.';
+}
+
 function finishBullet(shot) {
   state.bullet = null;
   if (!shot.hitNpc) {
-    writeLog('The gunshot cracks through the loop. NPCs flee while police give chase, but the bullet hits only stone and shadow.');
+    writeLog(`The gunshot cracks through the loop. ${gunfireReactionSummary()}`);
     draw();
     return;
   }
 
   bloodStains.add(`${shot.hitNpc.mapKey}:${positionKey(shot.hitNpc.x, shot.hitNpc.y)}`);
   state.npcs = state.npcs.filter((npc) => npc !== shot.hitNpc);
-  writeLog(`The bullet hits ${shot.hitNpc.profile.name}. A blood stain remains in every loop as the crowd panics and the police give chase.`);
+  writeLog(`The bullet hits ${shot.hitNpc.profile.name}. A blood stain remains in every loop. ${gunfireReactionSummary(shot.hitNpc)}`);
   draw();
 }
 
