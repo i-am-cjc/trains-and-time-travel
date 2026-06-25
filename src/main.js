@@ -93,6 +93,7 @@ const maps = Object.fromEntries(await Promise.all(
   closestPoint,
   positionKey,
   onCorpseCollected: markCorpseCollected,
+  onAmbulanceDispatched: scheduleDetectiveResponse,
 }));
 ({ updateDetectiveResponse, movePoliceCars, updateDetectiveSceneWork, returningPoliceCarFor, policeCarAt, nextDetectiveStep } = createDetectiveLogic({
   getState: () => state,
@@ -621,10 +622,13 @@ function markCorpseCollected(corpse) {
   const hazard = state.hazardPoints.find((candidate) => candidate.sourceId === corpse.id && candidate.type === 'corpse');
   if (hazard) hazard.status = 'waitingCleanup';
   const scene = state.crimeScenes.find((candidate) => candidate.corpseId === corpse.id);
-  if (scene) {
-    scene.status = 'bodyCollected';
-    scene.detectiveDispatchMinute = elapsedMinutes() + DETECTIVE_RESPONSE_DELAY_MINUTES;
-  }
+  if (scene) scene.status = 'bodyCollected';
+}
+
+function scheduleDetectiveResponse(corpse) {
+  const scene = state.crimeScenes.find((candidate) => candidate.corpseId === corpse.id);
+  if (!scene || scene.detectiveDispatchMinute !== null) return;
+  scene.detectiveDispatchMinute = elapsedMinutes() + DETECTIVE_RESPONSE_DELAY_MINUTES;
 }
 
 function manhattanDistance(a, b) {

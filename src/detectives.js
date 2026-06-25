@@ -221,9 +221,6 @@ export function createDetectiveLogic({
     const state = getState();
     return state.crimeScenes.find((scene) => {
       if (scene.status === 'secured') return false;
-      if (scene.status === 'bodyCollected' && scene.detectiveDispatchMinute === null) {
-        scene.detectiveDispatchMinute = getElapsedMinutes() + DETECTIVE_RESPONSE_DELAY_MINUTES;
-      }
       return scene.detectiveDispatchMinute !== null
         && getElapsedMinutes() >= scene.detectiveDispatchMinute
         && !state.policeCars.some((car) => car.sceneId === scene.id && car.status !== 'leaving');
