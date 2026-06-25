@@ -1,5 +1,6 @@
 const POLICE_CAR_RESPONSE_DISTANCE = 3;
 const POLICE_CAR_ROAD_Y = 31;
+export const DETECTIVE_RESPONSE_DELAY_MINUTES = 5;
 
 export function isDetective(npc) {
   return npc.profile.role === 'detective';
@@ -7,6 +8,7 @@ export function isDetective(npc) {
 
 export function createDetectiveLogic({
   getState,
+  getElapsedMinutes,
   maps,
   writeLog,
   killPlayer,
@@ -18,6 +20,7 @@ export function createDetectiveLogic({
   uniquePoints,
   neighborsOf,
   closestPoint,
+  positionKey,
 }) {
   function updateDetectiveResponse() {
     const crimeScene = nextCrimeSceneNeedingDetective();
@@ -109,8 +112,10 @@ export function createDetectiveLogic({
         detective.target = { x: scene.x, y: scene.y };
         return;
       }
-      detective.target = { x: scene.x, y: scene.y };
-      if (detective.mapKey === scene.mapKey && manhattanDistance(detective, scene) <= 1) {
+      const workPoint = detectiveWorkPoint(scene, detective);
+      if (!workPoint) return;
+      detective.target = workPoint;
+      if (detective.mapKey === scene.mapKey && detective.x === workPoint.x && detective.y === workPoint.y) {
         finishScene(scene, detective, car);
       }
     });
@@ -121,7 +126,7 @@ export function createDetectiveLogic({
     if (!state.chalkOutlines.some((outline) => outline.sceneId === scene.id)) {
       state.chalkOutlines.push({ sceneId: scene.id, mapKey: scene.mapKey, x: scene.x, y: scene.y });
       state.barriers.push(...barrierPointsAround(scene));
-      writeLog('The detective marks a chalk outline and sets a barrier around the square where the body lay.');
+      writeLog('The detective marks a chalk outline and sets barriers around all eight squares surrounding the body.');
     }
     scene.status = 'secured';
     detective.target = { x: car.x, y: car.y };
@@ -151,6 +156,16 @@ export function createDetectiveLogic({
   }
 
   function nextDetectiveStep(npc, occupied) {
+    const state = getState();
+    const car = state.policeCars.find((candidate) => candidate.id === npc.homePoliceCarId);
+    const scene = sceneById(npc.assignedSceneId);
+    if (scene?.status === 'bodyCollected') {
+      const workPoint = detectiveWorkPoint(scene, npc, occupied);
+      if (workPoint) return nextStepToward({ ...npc, target: workPoint }, occupied, { avoidFire: false }) ?? null;
+    }
+    if (scene?.status === 'secured' && car) {
+      return nextStepToward({ ...npc, target: { x: car.x, y: car.y } }, occupied, { avoidFire: false }) ?? null;
+    }
     return nextStepToward(npc, occupied, { avoidFire: false }) ?? null;
   }
 
@@ -160,7 +175,32 @@ export function createDetectiveLogic({
   }
 
   function barrierPointsAround(scene) {
-    return neighborsOf(scene).map((point) => ({ sceneId: scene.id, mapKey: scene.mapKey, x: point.x, y: point.y }));
+    return pointsAround(scene, 1).map((point) => ({ sceneId: scene.id, mapKey: scene.mapKey, x: point.x, y: point.y }));
+  }
+
+  function detectiveWorkPoint(scene, detective, occupied = new Set()) {
+    const blocked = new Set(barrierPointsAround(scene).map((point) => positionKey(point.x, point.y)));
+    const candidates = pointsAround(scene, 2)
+      .filter((point) => !blocked.has(positionKey(point.x, point.y)))
+      .filter((point) => !tileAtFor(scene.mapKey, point.x, point.y).blocks)
+      .filter((point) => !npcAtOnMap(scene.mapKey, point.x, point.y) || (point.x === detective.x && point.y === detective.y))
+      .sort((a, b) => manhattanDistance(detective, a) - manhattanDistance(detective, b));
+    return candidates.find((point) => (
+      (point.x === detective.x && point.y === detective.y)
+      || nextStepToward({ ...detective, target: point }, occupied, { avoidFire: false })
+    )) ?? closestPoint(detective, candidates);
+  }
+
+  function pointsAround(point, radius) {
+    const points = [];
+    for (let dy = -radius; dy <= radius; dy += 1) {
+      for (let dx = -radius; dx <= radius; dx += 1) {
+        if (dx === 0 && dy === 0) continue;
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== radius) continue;
+        points.push({ x: point.x + dx, y: point.y + dy });
+      }
+    }
+    return points;
   }
 
   function movePoliceCarBackToRoad(car) {
@@ -179,7 +219,15 @@ export function createDetectiveLogic({
 
   function nextCrimeSceneNeedingDetective() {
     const state = getState();
-    return state.crimeScenes.find((scene) => scene.status !== 'secured' && !state.policeCars.some((car) => car.sceneId === scene.id && car.status !== 'leaving')) ?? null;
+    return state.crimeScenes.find((scene) => {
+      if (scene.status === 'secured') return false;
+      if (scene.status === 'bodyCollected' && scene.detectiveDispatchMinute === null) {
+        scene.detectiveDispatchMinute = getElapsedMinutes() + DETECTIVE_RESPONSE_DELAY_MINUTES;
+      }
+      return scene.detectiveDispatchMinute !== null
+        && getElapsedMinutes() >= scene.detectiveDispatchMinute
+        && !state.policeCars.some((car) => car.sceneId === scene.id && car.status !== 'leaving');
+    }) ?? null;
   }
 
   function sceneById(sceneId) {
