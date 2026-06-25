@@ -26,6 +26,7 @@ export function createCleanupLogic({
     const hazard = nextWaitingHazard();
     if (!hazard) return;
     const state = getState();
+    if (hazard.type === 'ash' && hasActiveAshCleanup()) return;
     if (state.cleanupVans.some((van) => van.hazardId === hazard.id && van.status !== 'leaving')) return;
     dispatchCleanupVan(hazard);
   }
@@ -131,7 +132,25 @@ export function createCleanupLogic({
       if (hazard.cleaningTurns < CLEANING_TURNS_REQUIRED) return;
       cleanHazard(hazard);
       writeLog(cleanupFinishedMessage(hazard));
+      assignNextAshTile(van, hazard, crew);
     });
+  }
+
+  function assignNextAshTile(van, cleanedHazard, crew) {
+    if (cleanedHazard.type !== 'ash') return;
+    const nextAsh = nextWaitingAshHazard(cleanedHazard.mapKey);
+    if (!nextAsh) return;
+    nextAsh.status = 'cleanupDispatched';
+    nextAsh.cleaningTurns = 0;
+    van.hazardId = nextAsh.id;
+    van.targetHazard = { ...nextAsh };
+    crew.forEach((npc) => {
+      npc.assignedHazardId = nextAsh.id;
+      npc.target = cleanupWorkPoint(nextAsh, npc) ?? { x: nextAsh.x, y: nextAsh.y };
+      npc.profile.dialogue = cleanupDialogue(nextAsh);
+      npc.profile.description = `A cleanup responder in a pale hazmat suit assigned to ${hazardLabel(nextAsh)}.`;
+    });
+    writeLog('The cleanup crew moves the sign to the next ash tile instead of packing up.');
   }
 
   function placeCleanupSign(hazard) {
@@ -186,10 +205,28 @@ export function createCleanupLogic({
   }
 
   function nextWaitingHazard() {
-    const state = getState();
-    return state.hazardPoints.find((hazard) => hazard.type === 'ash' && hazard.status === 'waitingCleanup' && respondersFinished(hazard))
-      ?? state.hazardPoints.find((hazard) => hazard.status === 'waitingCleanup' && respondersFinished(hazard))
-      ?? null;
+    return nextWaitingAshHazard() ?? nextWaitingNonAshHazard() ?? null;
+  }
+
+  function nextWaitingAshHazard(mapKey = null) {
+    return getState().hazardPoints.find((hazard) => (
+      hazard.type === 'ash'
+      && hazard.status === 'waitingCleanup'
+      && (mapKey === null || hazard.mapKey === mapKey)
+      && respondersFinished(hazard)
+    )) ?? null;
+  }
+
+  function nextWaitingNonAshHazard() {
+    return getState().hazardPoints.find((hazard) => hazard.type !== 'ash' && hazard.status === 'waitingCleanup' && respondersFinished(hazard)) ?? null;
+  }
+
+  function hasActiveAshCleanup() {
+    return getState().cleanupVans.some((van) => {
+      if (van.status === 'leaving') return false;
+      const hazard = hazardById(van.hazardId);
+      return hazard?.type === 'ash';
+    });
   }
 
   function respondersFinished(hazard) {
