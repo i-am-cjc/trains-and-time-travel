@@ -1074,7 +1074,7 @@ function chaseStepOnAxis(npc, axis, dx, dy, occupied) {
   return step;
 }
 
-function nextStepToward(npc, occupied, { avoidFire = !isLawEnforcement(npc), avoidRoad = true } = {}) {
+function nextStepToward(npc, occupied, { avoidFire = !isLawEnforcement(npc), avoidRoad = true, allowOccupiedTarget = true } = {}) {
   const startKey = positionKey(npc.x, npc.y);
   const targetKey = positionKey(npc.target.x, npc.target.y);
   const distances = new Map([[startKey, 0]]);
@@ -1093,7 +1093,7 @@ function nextStepToward(npc, occupied, { avoidFire = !isLawEnforcement(npc), avo
       const tile = tileAtFor(npc.mapKey, neighbor.x, neighbor.y);
       if (tile.blocks) return;
       if (avoidFire && isFireAt(npc.mapKey, neighbor.x, neighbor.y)) return;
-      if (occupied.has(`${npc.mapKey}:${key}`) && key !== targetKey) return;
+      if (occupied.has(`${npc.mapKey}:${key}`) && (!allowOccupiedTarget || key !== targetKey)) return;
       const roadCost = avoidRoad && tile.road && key !== targetKey ? NPC_ROAD_PATH_COST : 1;
       const nextCost = current.cost + roadCost;
       if (distances.has(key) && distances.get(key) <= nextCost) return;
@@ -1114,7 +1114,17 @@ function nextStepToward(npc, occupied, { avoidFire = !isLawEnforcement(npc), avo
 }
 
 function nextVehicleStepToward(vehicle) {
-  return nextStepToward(vehicle, new Set(), { avoidFire: false, avoidRoad: false });
+  return nextStepToward(vehicle, vehicleBlockedPositions(vehicle), {
+    avoidFire: false,
+    avoidRoad: false,
+    allowOccupiedTarget: false,
+  });
+}
+
+function vehicleBlockedPositions(vehicle) {
+  return new Set(state.cars
+    .filter((car) => car.mapKey === vehicle.mapKey)
+    .map((car) => `${car.mapKey}:${positionKey(car.x, car.y)}`));
 }
 
 function neighborsOf(point) {
