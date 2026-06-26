@@ -906,7 +906,13 @@ function moveNpcs() {
 
   state.npcs = state.npcs.map((npc) => {
     let traveler = npc;
-    if (!state.gunfirePanic && traveler.x === traveler.target.x && traveler.y === traveler.target.y && !returningFireEngineFor(traveler) && !returningAmbulanceFor(traveler) && !returningPoliceCarFor(traveler) && !returningCleanupVanFor(traveler)) {
+    const startingReturnVehicle = returningVehicleFor(traveler);
+    if (isAtVehicle(traveler, startingReturnVehicle)) {
+      occupied.delete(`${traveler.mapKey}:${positionKey(traveler.x, traveler.y)}`);
+      return null;
+    }
+
+    if (!state.gunfirePanic && traveler.x === traveler.target.x && traveler.y === traveler.target.y && !startingReturnVehicle) {
       traveler = chooseNextNpcTarget(traveler);
     }
 
@@ -934,8 +940,8 @@ function moveNpcs() {
       occupied.delete(stepKey);
       return null;
     }
-    const returningVehicle = returningFireEngineFor(moved) ?? returningAmbulanceFor(moved) ?? returningPoliceCarFor(moved) ?? returningCleanupVanFor(moved);
-    if (returningVehicle && moved.x === returningVehicle.x && moved.y === returningVehicle.y) {
+    const returningVehicle = returningVehicleFor(moved);
+    if (isAtVehicle(moved, returningVehicle)) {
       occupied.delete(stepKey);
       return null;
     }
@@ -950,6 +956,14 @@ function moveNpcs() {
   }
 
   remarks.forEach((remark) => writeLog(remark));
+}
+
+function returningVehicleFor(npc) {
+  return returningFireEngineFor(npc) ?? returningAmbulanceFor(npc) ?? returningPoliceCarFor(npc) ?? returningCleanupVanFor(npc);
+}
+
+function isAtVehicle(npc, vehicle) {
+  return Boolean(vehicle && npc.mapKey === vehicle.mapKey && npc.x === vehicle.x && npc.y === vehicle.y);
 }
 
 const STATION_DOOR_X = 94;
