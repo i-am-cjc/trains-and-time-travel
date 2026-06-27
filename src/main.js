@@ -940,13 +940,14 @@ function moveNpcs() {
       .map((npc) => `${npc.mapKey}:${positionKey(npc.x, npc.y)}`),
     ...carBlockedPositionsForNpcs(),
   ]);
+  const workerOccupiedByType = workerOccupiedPositionsByType();
   const remarks = [];
 
   state.npcs = state.npcs.map((npc) => {
     let traveler = npc;
     const startingReturnVehicle = returningVehicleFor(traveler);
     if (isAtVehicle(traveler, startingReturnVehicle)) {
-      occupied.delete(`${traveler.mapKey}:${positionKey(traveler.x, traveler.y)}`);
+      removeOccupancy(traveler, occupied, workerOccupiedByType);
       return null;
     }
 
@@ -954,7 +955,8 @@ function moveNpcs() {
       traveler = chooseNextNpcTarget(traveler);
     }
 
-    const step = nextNpcStep(traveler, occupied);
+    const movementOccupied = occupiedPositionsForNpc(traveler, occupied, workerOccupiedByType);
+    const step = nextNpcStep(traveler, movementOccupied);
     if (!step) return traveler;
 
     if (traveler.mapKey === state.currentMapKey && step.x === state.player.x && step.y === state.player.y) {
@@ -969,18 +971,17 @@ function moveNpcs() {
     }
 
     const stepKey = `${traveler.mapKey}:${positionKey(step.x, step.y)}`;
-    if (occupied.has(stepKey) || tileAtFor(traveler.mapKey, step.x, step.y).blocks) return traveler;
+    if (movementOccupied.has(stepKey) || tileAtFor(traveler.mapKey, step.x, step.y).blocks) return traveler;
 
-    occupied.delete(`${traveler.mapKey}:${positionKey(traveler.x, traveler.y)}`);
-    if (!isWorkerNpc(traveler)) occupied.add(stepKey);
+    moveOccupancy(traveler, stepKey, occupied, workerOccupiedByType);
     const moved = { ...traveler, x: step.x, y: step.y, chaseAxis: step.chaseAxis ?? traveler.chaseAxis };
     if (moved.fallbackDespawnAt && moved.x === moved.fallbackDespawnAt.x && moved.y === moved.fallbackDespawnAt.y) {
-      occupied.delete(stepKey);
+      removeOccupancy(moved, occupied, workerOccupiedByType);
       return null;
     }
     const returningVehicle = returningVehicleFor(moved);
     if (isAtVehicle(moved, returningVehicle)) {
-      occupied.delete(stepKey);
+      removeOccupancy(moved, occupied, workerOccupiedByType);
       return null;
     }
     handleNpcArrival(moved);
@@ -994,6 +995,57 @@ function moveNpcs() {
   }
 
   remarks.forEach((remark) => writeLog(remark));
+}
+
+
+function occupiedPositionsForNpc(npc, occupied, workerOccupiedByType) {
+  const type = workerNpcType(npc);
+  if (!type) return occupied;
+  return new Set([...occupied, ...(workerOccupiedByType.get(type) ?? [])]);
+}
+
+function moveOccupancy(npc, stepKey, occupied, workerOccupiedByType) {
+  const startKey = `${npc.mapKey}:${positionKey(npc.x, npc.y)}`;
+  const type = workerNpcType(npc);
+  if (!type) {
+    occupied.delete(startKey);
+    occupied.add(stepKey);
+    return;
+  }
+
+  const workerOccupied = workerOccupiedByType.get(type);
+  workerOccupied?.delete(startKey);
+  workerOccupied?.add(stepKey);
+}
+
+
+function removeOccupancy(npc, occupied, workerOccupiedByType) {
+  const key = `${npc.mapKey}:${positionKey(npc.x, npc.y)}`;
+  const type = workerNpcType(npc);
+  if (!type) {
+    occupied.delete(key);
+    return;
+  }
+
+  workerOccupiedByType.get(type)?.delete(key);
+}
+
+function workerOccupiedPositionsByType() {
+  return state.npcs.reduce((occupiedByType, npc) => {
+    const type = workerNpcType(npc);
+    if (!type) return occupiedByType;
+    if (!occupiedByType.has(type)) occupiedByType.set(type, new Set());
+    occupiedByType.get(type).add(`${npc.mapKey}:${positionKey(npc.x, npc.y)}`);
+    return occupiedByType;
+  }, new Map());
+}
+
+function workerNpcType(npc) {
+  if (isFirefighter(npc)) return 'firefighter';
+  if (isParamedic(npc)) return 'paramedic';
+  if (isPoliceResponder(npc)) return 'policeResponder';
+  if (isCleanupResponder(npc)) return 'cleanupResponder';
+  return null;
 }
 
 function returningVehicleFor(npc) {
