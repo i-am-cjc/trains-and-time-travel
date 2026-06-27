@@ -81,7 +81,7 @@ export function createDetectiveLogic({
 
     const scene = sceneById(car.sceneId);
     if (!scene) return { ...car, status: 'returning' };
-    const step = nextVehicleStepToward({ ...car, target: scene });
+    const step = nextVehicleStepToward({ ...car, target: scene }, { parkingDistance: POLICE_CAR_RESPONSE_DISTANCE });
     if (!step) return car;
     const moved = { ...car, ...step, targetScene: { ...scene } };
     if (manhattanDistance(moved, scene) <= POLICE_CAR_RESPONSE_DISTANCE) {

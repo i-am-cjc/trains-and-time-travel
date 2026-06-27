@@ -77,7 +77,7 @@ export function createAmbulanceLogic({
 
     const corpse = corpseById(ambulance.corpseId);
     if (!corpse) return { ...ambulance, status: 'returning' };
-    const step = nextVehicleStepToward({ ...ambulance, target: corpse });
+    const step = nextVehicleStepToward({ ...ambulance, target: corpse }, { parkingDistance: AMBULANCE_RESPONSE_DISTANCE });
     if (!step) return ambulance;
     const moved = { ...ambulance, ...step, targetCorpse: { ...corpse } };
     if (manhattanDistance(moved, corpse) <= AMBULANCE_RESPONSE_DISTANCE) {

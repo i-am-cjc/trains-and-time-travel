@@ -76,7 +76,7 @@ export function createCleanupLogic({
 
     const hazard = hazardById(van.hazardId);
     if (!hazard || hazard.status === 'cleaned') return { ...van, status: 'returning' };
-    const step = nextVehicleStepToward({ ...van, target: hazard });
+    const step = nextVehicleStepToward({ ...van, target: hazard }, { parkingDistance: CLEANUP_VAN_RESPONSE_DISTANCE });
     if (!step) return van;
     const moved = { ...van, ...step, targetHazard: { ...hazard } };
     if (manhattanDistance(moved, hazard) <= CLEANUP_VAN_RESPONSE_DISTANCE) {
