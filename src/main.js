@@ -16,6 +16,8 @@ const world = new Container();
 const hud = document.querySelector('#hud');
 const log = document.querySelector('#log');
 const inventoryList = document.querySelector('#inventory-list');
+const playButton = document.querySelector('#play-button');
+const fastForwardButton = document.querySelector('#fast-forward-button');
 const inspectButton = document.querySelector('#inspect-button');
 const inspectStatus = document.querySelector('#inspect-status');
 const loopEffect = document.querySelector('#loop-effect');
@@ -26,6 +28,12 @@ let inspectMode = false;
 let state;
 let loopCount = 0;
 let resetEffectTimeout;
+let autoplayMode = null;
+let autoplayInterval = null;
+const AUTOPLAY_SPEEDS = {
+  play: { intervalMs: 1000, button: playButton },
+  fastForward: { intervalMs: 200, button: fastForwardButton },
+};
 const CAR_SPAWN_MINUTES = 5;
 const CAR_SPAWN_MAX_MINUTES = 15;
 const TRAFFIC_VEHICLE_TYPES = ['car', 'pickup', 'bus', 'lorry', 'motorbike'];
@@ -176,6 +184,9 @@ window.addEventListener('keydown', (event) => {
   tryMove(...directions[event.code]);
 });
 
+playButton.addEventListener('click', () => toggleAutoplay('play'));
+fastForwardButton.addEventListener('click', () => toggleAutoplay('fastForward'));
+
 inspectButton.addEventListener('click', () => {
   inspectMode = !inspectMode;
   inspectButton.classList.toggle('active', inspectMode);
@@ -189,6 +200,29 @@ app.canvas.addEventListener('click', (event) => {
   const y = Math.floor((event.clientY - rect.top - world.y) / TILE_SIZE);
   describeTile(x, y);
 });
+
+function toggleAutoplay(mode) {
+  if (autoplayMode === mode) {
+    stopAutoplay();
+    return;
+  }
+
+  stopAutoplay();
+  autoplayMode = mode;
+  AUTOPLAY_SPEEDS[mode].button.classList.add('active');
+  AUTOPLAY_SPEEDS[mode].button.setAttribute('aria-pressed', 'true');
+  autoplayInterval = setInterval(() => spendMinute(), AUTOPLAY_SPEEDS[mode].intervalMs);
+}
+
+function stopAutoplay() {
+  clearInterval(autoplayInterval);
+  autoplayInterval = null;
+  autoplayMode = null;
+  Object.values(AUTOPLAY_SPEEDS).forEach(({ button }) => {
+    button.classList.remove('active');
+    button.setAttribute('aria-pressed', 'false');
+  });
+}
 
 function resetLoop(message, { effect = true } = {}) {
   loopCount += 1;
