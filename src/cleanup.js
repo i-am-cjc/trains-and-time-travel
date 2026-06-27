@@ -197,8 +197,7 @@ export function createCleanupLogic({
     state.npcs = state.npcs.filter((npc) => (
       npc.homeCleanupVanId !== van.id
       || npc.mapKey !== van.mapKey
-      || npc.x !== van.x
-      || npc.y !== van.y
+      || manhattanDistance(npc, van) > 1
     ));
   }
 
