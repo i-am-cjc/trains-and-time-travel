@@ -40,6 +40,8 @@ const TRAFFIC_VEHICLE_TYPES = ['car', 'pickup', 'bus', 'lorry', 'motorbike'];
 const TRAFFIC_VEHICLE_COLORS = [0xef4444, 0x2563eb, 0x16a34a, 0xf97316, 0xeab308, 0x7c3aed, 0xec4899, 0xf8fafc, 0x94a3b8];
 const NPC_ROAD_PATH_COST = 20;
 const GUNFIRE_PANIC_TURNS = 20;
+const MIN_PARKED_WORKER_VEHICLE_DISTANCE = 4;
+const WALL_PARKING_BUFFER = 1;
 
 const itemDefinitions = createItemDefinitions({ resetRun: resetLoop, fireGun, igniteFire, writeLog, draw });
 const scheduledEvents = createScheduledEvents({ updateTerrain, moveItem, writeLog, queueStationMasterDoorAction });
@@ -1275,8 +1277,10 @@ function nextStepToward(npc, occupied, { avoidFire = !isLawEnforcement(npc), avo
   return { x: step.x, y: step.y };
 }
 
-function nextVehicleStepToward(vehicle) {
-  return nextStepToward(vehicle, vehicleBlockedPositions(vehicle), {
+function nextVehicleStepToward(vehicle, { parkingDistance = 0 } = {}) {
+  const parkingTarget = parkingDistance ? closestVehicleParkingPoint(vehicle, parkingDistance) : null;
+  if (parkingDistance && !parkingTarget) return null;
+  return nextStepToward({ ...vehicle, target: parkingTarget ?? vehicle.target }, vehicleBlockedPositions(vehicle), {
     avoidFire: false,
     avoidRoad: false,
     allowOccupiedTarget: false,
@@ -1284,13 +1288,64 @@ function nextVehicleStepToward(vehicle) {
 }
 
 function vehicleBlockedPositions(vehicle) {
-  return new Set(state.cars
-    .filter((car) => car.mapKey === vehicle.mapKey)
-    .map((car) => `${car.mapKey}:${positionKey(car.x, car.y)}`));
+  return new Set([
+    ...state.cars
+      .filter((car) => car.mapKey === vehicle.mapKey)
+      .map((car) => `${car.mapKey}:${positionKey(car.x, car.y)}`),
+    ...parkedWorkerVehicles()
+      .filter((parked) => parked.id !== vehicle.id && parked.mapKey === vehicle.mapKey)
+      .map((parked) => `${parked.mapKey}:${positionKey(parked.x, parked.y)}`),
+  ]);
 }
 
 function carBlockedPositionsForNpcs() {
-  return state.cars.map((car) => `${car.mapKey}:${positionKey(car.x, car.y)}`);
+  return [
+    ...state.cars,
+    ...parkedWorkerVehicles(),
+  ].map((car) => `${car.mapKey}:${positionKey(car.x, car.y)}`);
+}
+
+function parkedWorkerVehicles() {
+  return [
+    ...state.fireEngines,
+    ...state.ambulances,
+    ...state.policeCars,
+    ...state.cleanupVans,
+  ].filter((vehicle) => vehicle.status === 'deployed');
+}
+
+function closestVehicleParkingPoint(vehicle, parkingDistance) {
+  const candidates = walkableTiles(vehicle.mapKey)
+    .filter((point) => manhattanDistance(point, vehicle.target) <= parkingDistance)
+    .filter((point) => isSafeWorkerVehicleParkingPoint(vehicle, point));
+  return candidates.reduce((closest, point) => {
+    if (!closest) return point;
+    const pointDistance = manhattanDistance(vehicle, point);
+    const closestDistance = manhattanDistance(vehicle, closest);
+    if (pointDistance !== closestDistance) return pointDistance < closestDistance ? point : closest;
+    return manhattanDistance(point, vehicle.target) < manhattanDistance(closest, vehicle.target) ? point : closest;
+  }, null);
+}
+
+function isSafeWorkerVehicleParkingPoint(vehicle, point) {
+  if (tileAtFor(vehicle.mapKey, point.x, point.y).blocks) return false;
+  if (npcAtOnMap(vehicle.mapKey, point.x, point.y)) return false;
+  if (carAtOnMap(vehicle.mapKey, point.x, point.y)) return false;
+  if (hasWallWithinParkingBuffer(vehicle.mapKey, point)) return false;
+  return parkedWorkerVehicles().every((parked) => (
+    parked.id === vehicle.id
+    || parked.mapKey !== vehicle.mapKey
+    || manhattanDistance(parked, point) >= MIN_PARKED_WORKER_VEHICLE_DISTANCE
+  ));
+}
+
+function hasWallWithinParkingBuffer(mapKey, point) {
+  for (let y = point.y - WALL_PARKING_BUFFER; y <= point.y + WALL_PARKING_BUFFER; y += 1) {
+    for (let x = point.x - WALL_PARKING_BUFFER; x <= point.x + WALL_PARKING_BUFFER; x += 1) {
+      if (tileAtFor(mapKey, x, y).blocks) return true;
+    }
+  }
+  return false;
 }
 
 function neighborsOf(point) {

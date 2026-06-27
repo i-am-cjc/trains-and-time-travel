@@ -84,7 +84,7 @@ export function createFirefighterLogic({
 
     const nearestFire = closestFireTo({ mapKey: engine.mapKey, x: engine.x, y: engine.y });
     if (!nearestFire) return { ...engine, status: 'returning' };
-    const step = nextVehicleStepToward({ ...engine, target: nearestFire });
+    const step = nextVehicleStepToward({ ...engine, target: nearestFire }, { parkingDistance: FIRE_ENGINE_RESPONSE_DISTANCE });
     if (!step) return engine;
     const moved = { ...engine, ...step, targetFire: { ...nearestFire } };
     if (manhattanDistance(moved, nearestFire) <= FIRE_ENGINE_RESPONSE_DISTANCE) {
