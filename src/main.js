@@ -661,7 +661,7 @@ function extinguishAdjacentFires() {
 }
 
 function killNpcsCaughtInFire() {
-  const victims = state.npcs.filter((npc) => isFireAt(npc.mapKey, npc.x, npc.y));
+  const victims = state.npcs.filter((npc) => !isFirefighter(npc) && isFireAt(npc.mapKey, npc.x, npc.y));
   if (!victims.length) return;
   const victimKeys = new Set(victims.map((npc) => `${npc.mapKey}:${positionKey(npc.x, npc.y)}`));
   state.npcs = state.npcs.filter((npc) => !victimKeys.has(`${npc.mapKey}:${positionKey(npc.x, npc.y)}`));
