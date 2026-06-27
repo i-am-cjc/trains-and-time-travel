@@ -55,6 +55,11 @@ button.active {
   background: #79d2ff;
 }
 
+#autoplay-controls {
+  display: flex;
+  gap: 0.5rem;
+}
+
 #game {
   inset: 0;
   overflow: hidden;
