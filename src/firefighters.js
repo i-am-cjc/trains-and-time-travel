@@ -1,4 +1,4 @@
-const FIRE_ENGINE_CREW_SIZE = 6;
+const FIRE_ENGINE_CREW_SIZE = 4;
 const FIRE_ENGINE_RESPONSE_DISTANCE = 5;
 const FIRE_ENGINE_SPAWN_X = 72;
 const FIRE_ENGINE_ROAD_Y = 30;
@@ -89,7 +89,7 @@ export function createFirefighterLogic({
     const moved = { ...engine, ...step, targetFire: { ...nearestFire } };
     if (manhattanDistance(moved, nearestFire) <= FIRE_ENGINE_RESPONSE_DISTANCE) {
       deployFirefighters(moved);
-      writeLog('The fire engine brakes near the fire and six firefighters leap out with hoses.');
+      writeLog(`The fire engine brakes near the fire and ${FIRE_ENGINE_CREW_SIZE} firefighters leap out with hoses.`);
       return { ...moved, status: 'deployed' };
     }
     return moved;
