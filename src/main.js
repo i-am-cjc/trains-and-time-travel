@@ -935,7 +935,9 @@ function moveNpcs() {
   updateGunfirePanicTargets();
   updateStationMasterScoldingTarget();
   const occupied = new Set([
-    ...state.npcs.map((npc) => `${npc.mapKey}:${positionKey(npc.x, npc.y)}`),
+    ...state.npcs
+      .filter((npc) => !isWorkerNpc(npc))
+      .map((npc) => `${npc.mapKey}:${positionKey(npc.x, npc.y)}`),
     ...carBlockedPositionsForNpcs(),
   ]);
   const remarks = [];
@@ -970,7 +972,7 @@ function moveNpcs() {
     if (occupied.has(stepKey) || tileAtFor(traveler.mapKey, step.x, step.y).blocks) return traveler;
 
     occupied.delete(`${traveler.mapKey}:${positionKey(traveler.x, traveler.y)}`);
-    occupied.add(stepKey);
+    if (!isWorkerNpc(traveler)) occupied.add(stepKey);
     const moved = { ...traveler, x: step.x, y: step.y, chaseAxis: step.chaseAxis ?? traveler.chaseAxis };
     if (moved.fallbackDespawnAt && moved.x === moved.fallbackDespawnAt.x && moved.y === moved.fallbackDespawnAt.y) {
       occupied.delete(stepKey);
@@ -999,7 +1001,11 @@ function returningVehicleFor(npc) {
 }
 
 function isAtVehicle(npc, vehicle) {
-  return Boolean(vehicle && npc.mapKey === vehicle.mapKey && npc.x === vehicle.x && npc.y === vehicle.y);
+  return Boolean(vehicle && npc.mapKey === vehicle.mapKey && manhattanDistance(npc, vehicle) <= 1);
+}
+
+function isWorkerNpc(npc) {
+  return isFirefighter(npc) || isParamedic(npc) || isPoliceResponder(npc) || isCleanupResponder(npc);
 }
 
 const STATION_DOOR_X = 94;
